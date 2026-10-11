@@ -40,6 +40,17 @@ data class Session(
     val note: String,
 )
 
+/** Pauza w trakcie zdarzenia; end == null oznacza, że pauza trwa. */
+data class Pause(
+    val id: Long,
+    val sessionId: Long,
+    val start: Long,
+    val end: Long?,
+)
+
+/** Pojedyncza zmiana licznika. */
+data class Tap(val ts: Long, val amount: Int, val manual: Boolean)
+
 /* ---------- daty i liczby ---------- */
 
 object Dates {
@@ -98,6 +109,25 @@ object Prefs {
     fun overdueHours(ctx: Context): Int = sp(ctx).getInt("overdue_h", 4)
     fun goalNotify(ctx: Context): Boolean = sp(ctx).getBoolean("goal_notify", true)
 
+    /** Ostatni moment, w którym użytkownik korzystał z aplikacji lub jej powiadomień. */
+    fun touch(ctx: Context) {
+        sp(ctx).edit().putLong("last_seen", System.currentTimeMillis()).apply()
+    }
+
+    fun markRebooted(ctx: Context) {
+        sp(ctx).edit().putBoolean("rebooted", true).apply()
+    }
+
+    /** Czy po uruchomieniu pokazać ekran „Witaj z powrotem”: trwają zdarzenia, a aplikacja długo nie była używana lub telefon się restartował. */
+    fun consumeResumeNeeded(ctx: Context, hasRunning: Boolean): Boolean {
+        val p = sp(ctx)
+        val rebooted = p.getBoolean("rebooted", false)
+        val lastSeen = p.getLong("last_seen", 0L)
+        p.edit().putBoolean("rebooted", false).apply()
+        if (!hasRunning) return false
+        return rebooted || System.currentTimeMillis() - lastSeen > 30 * 60_000L
+    }
+
     fun save(ctx: Context, reminderOn: Boolean, reminderMinutes: Int, overdueHours: Int, goalNotify: Boolean) {
         sp(ctx).edit()
             .putBoolean("rem_on", reminderOn)
@@ -110,7 +140,7 @@ object Prefs {
 
 /* ---------- baza ---------- */
 
-private class Db(ctx: Context) : SQLiteOpenHelper(ctx, "kreska.db", null, 1) {
+private class Db(ctx: Context) : SQLiteOpenHelper(ctx, "kreska.db", null, 2) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
             "CREATE TABLE counters(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, " +
@@ -132,9 +162,20 @@ private class Db(ctx: Context) : SQLiteOpenHelper(ctx, "kreska.db", null, 1) {
                 "start INTEGER NOT NULL, end_ts INTEGER, note TEXT NOT NULL DEFAULT '')"
         )
         db.execSQL("CREATE INDEX sess_ts ON sessions(tracker_id, start)")
+        createPauses(db)
     }
 
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {}
+    private fun createPauses(db: SQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE pauses(id INTEGER PRIMARY KEY AUTOINCREMENT, session_id INTEGER NOT NULL, " +
+                "start INTEGER NOT NULL, end_ts INTEGER)"
+        )
+        db.execSQL("CREATE INDEX pauses_s ON pauses(session_id)")
+    }
+
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if (oldVersion < 2) createPauses(db)
+    }
 }
 
 /* ---------- repozytorium ---------- */
@@ -270,6 +311,28 @@ object Repo {
             out
         }
 
+    fun taps(counterId: Long, from: LocalDate, to: LocalDate): List<Tap> =
+        db.rawQuery(
+            "SELECT ts, amount, manual FROM taps WHERE counter_id=? AND day BETWEEN ? AND ? ORDER BY ts",
+            args(counterId, from, to)
+        ).use { c ->
+            val out = ArrayList<Tap>()
+            while (c.moveToNext()) out.add(Tap(c.getLong(0), c.getInt(1), c.getInt(2) == 1))
+            out
+        }
+
+    /** Wszystkie dni (cała historia) z wynikiem dziennym — do liczenia serii. */
+    fun allDailyTotals(counterId: Long): Map<String, Int> =
+        db.rawQuery("SELECT day, SUM(amount) FROM taps WHERE counter_id=? GROUP BY day", args(counterId)).use { c ->
+            val out = HashMap<String, Int>()
+            while (c.moveToNext()) out[c.getString(0)] = c.getInt(1)
+            out
+        }
+
+    /** Wszystkie zdarzenia danego typu (cała historia) — do serii. */
+    fun allSessions(trackerId: Long): List<Session> =
+        sessionsQuery("WHERE tracker_id=? ORDER BY start", args(trackerId))
+
     /** Suma kliknięć wg godziny doby (bez korekt ręcznych). */
     fun hourly(counterId: Long, from: LocalDate, to: LocalDate): IntArray {
         val h = IntArray(24)
@@ -321,6 +384,7 @@ object Repo {
             Alarms.cancelOverdue(app, it.id)
             Notifier.cancelOverdue(app, it.id)
         }
+        db.delete("pauses", "session_id IN (SELECT id FROM sessions WHERE tracker_id=?)", args(id))
         db.delete("sessions", "tracker_id=?", args(id))
         db.delete("trackers", "id=?", args(id))
         changed()
@@ -359,11 +423,18 @@ object Repo {
             putNull("end_ts")
             put("note", "")
         })
-        Alarms.scheduleOverdue(app, id, start)
+        Alarms.scheduleOverdue(app, id, 0L)
         changed()
     }
 
     fun stopSession(sessionId: Long) {
+        val now = System.currentTimeMillis()
+        db.update(
+            "pauses",
+            ContentValues().apply { put("end_ts", now) },
+            "session_id=? AND end_ts IS NULL",
+            args(sessionId)
+        )
         db.update(
             "sessions",
             ContentValues().apply { put("end_ts", System.currentTimeMillis()) },
@@ -379,6 +450,81 @@ object Repo {
         runningFor(trackerId)?.let { stopSession(it.id) }
     }
 
+    /* --- pauzy --- */
+
+    private fun readPause(c: Cursor) = Pause(c.getLong(0), c.getLong(1), c.getLong(2), c.longOrNull(3))
+
+    fun pauses(sessionId: Long): List<Pause> =
+        db.rawQuery("SELECT id,session_id,start,end_ts FROM pauses WHERE session_id=? ORDER BY start", args(sessionId)).use { c ->
+            val out = ArrayList<Pause>()
+            while (c.moveToNext()) out.add(readPause(c))
+            out
+        }
+
+    /** Pauzy dla wielu zdarzeń naraz: mapa id zdarzenia → lista pauz. */
+    fun pausesFor(sessionIds: Collection<Long>): Map<Long, List<Pause>> {
+        if (sessionIds.isEmpty()) return emptyMap()
+        val out = HashMap<Long, MutableList<Pause>>()
+        sessionIds.chunked(500).forEach { chunk ->
+            val inList = chunk.joinToString(",")
+            db.rawQuery("SELECT id,session_id,start,end_ts FROM pauses WHERE session_id IN ($inList) ORDER BY start", null).use { c ->
+                while (c.moveToNext()) {
+                    val p = readPause(c)
+                    out.getOrPut(p.sessionId) { ArrayList() }.add(p)
+                }
+            }
+        }
+        return out
+    }
+
+    fun isPaused(sessionId: Long): Boolean =
+        db.rawQuery("SELECT COUNT(*) FROM pauses WHERE session_id=? AND end_ts IS NULL", args(sessionId)).use { c ->
+            c.moveToFirst() && c.getInt(0) > 0
+        }
+
+    /** Czas aktywny zdarzenia (bez pauz), w milisekundach. */
+    fun activeMs(s: Session): Long = Stats.activeMs(s, pauses(s.id), System.currentTimeMillis())
+
+    fun pauseSession(sessionId: Long) {
+        val s = session(sessionId) ?: return
+        if (s.end != null || isPaused(sessionId)) return
+        db.insert("pauses", null, ContentValues().apply {
+            put("session_id", sessionId)
+            put("start", System.currentTimeMillis())
+            putNull("end_ts")
+        })
+        Alarms.cancelOverdue(app, sessionId)
+        changed()
+    }
+
+    fun resumeSession(sessionId: Long) {
+        val s = session(sessionId) ?: return
+        if (s.end != null) return
+        db.update(
+            "pauses",
+            ContentValues().apply { put("end_ts", System.currentTimeMillis()) },
+            "session_id=? AND end_ts IS NULL",
+            args(sessionId)
+        )
+        Alarms.scheduleOverdue(app, sessionId, activeMs(s))
+        changed()
+    }
+
+    fun pauseTracker(trackerId: Long) {
+        runningFor(trackerId)?.let { pauseSession(it.id) }
+    }
+
+    fun resumeTracker(trackerId: Long) {
+        runningFor(trackerId)?.let { resumeSession(it.id) }
+    }
+
+    fun clearPauses(sessionId: Long) {
+        db.delete("pauses", "session_id=?", args(sessionId))
+        val s = session(sessionId)
+        if (s != null && s.end == null) Alarms.scheduleOverdue(app, sessionId, activeMs(s))
+        changed()
+    }
+
     fun saveSession(s: Session): Long {
         val cv = ContentValues().apply {
             put("tracker_id", s.trackerId)
@@ -390,8 +536,16 @@ object Repo {
             db.update("sessions", cv, "id=?", args(s.id)); s.id
         }
         if (s.end == null) {
-            Alarms.scheduleOverdue(app, id, s.start)
+            val saved = s.copy(id = id)
+            if (isPaused(id)) Alarms.cancelOverdue(app, id) else Alarms.scheduleOverdue(app, id, activeMs(saved))
         } else {
+            val endTs: Long = s.end ?: System.currentTimeMillis()
+            db.update(
+                "pauses",
+                ContentValues().apply { put("end_ts", endTs) },
+                "session_id=? AND end_ts IS NULL",
+                args(id)
+            )
             Alarms.cancelOverdue(app, id)
             Notifier.cancelOverdue(app, id)
         }
@@ -402,6 +556,7 @@ object Repo {
     fun deleteSession(id: Long) {
         Alarms.cancelOverdue(app, id)
         Notifier.cancelOverdue(app, id)
+        db.delete("pauses", "session_id=?", args(id))
         db.delete("sessions", "id=?", args(id))
         changed()
     }
@@ -410,20 +565,27 @@ object Repo {
 
     fun csv(from: LocalDate): String {
         val to = LocalDate.now()
-        val sb = StringBuilder("﻿typ;nazwa;data;wartość;początek;koniec;czas_min;notatka\r\n")
+        val sb = StringBuilder("﻿typ;nazwa;data;wartość;początek;koniec;czas_min;pauzy_min;notatka\r\n")
         fun q(s: String) = "\"" + s.replace("\"", "\"\"") + "\""
         for (c in counters()) {
             dailyTotals(c.id, from, to).toSortedMap().forEach { (d, v) ->
-                if (v != 0) sb.append("licznik;${q(c.name)};$d;$v;;;;\r\n")
+                if (v != 0) sb.append("licznik;${q(c.name)};$d;$v;;;;;\r\n")
             }
         }
         val names = trackers().associate { it.id to it.name }
-        for (s in sessionsQuery("WHERE start>=? ORDER BY start", args(Dates.startOf(from)))) {
+        val list = sessionsQuery("WHERE start>=? ORDER BY start", args(Dates.startOf(from)))
+        val pauseMap = pausesFor(list.map { it.id })
+        val now = System.currentTimeMillis()
+        for (s in list) {
             val n = names[s.trackerId] ?: continue
             val end = s.end
+            val ps = pauseMap[s.id] ?: emptyList()
+            val active = Stats.activeMs(s, ps, now)
+            val paused = (end ?: now) - s.start - active
             sb.append("zdarzenie;${q(n)};${Dates.keyOf(s.start)};;${Dates.full(s.start)};")
             sb.append(if (end != null) Dates.full(end) else "").append(';')
-            sb.append(if (end != null) ((end - s.start) / 60_000).toString() else "").append(';')
+            sb.append(active / 60_000).append(';')
+            sb.append(paused / 60_000).append(';')
             sb.append(q(s.note)).append("\r\n")
         }
         return sb.toString()

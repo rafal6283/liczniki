@@ -30,7 +30,9 @@ object Alarms {
     fun scheduleAll(ctx: Context) {
         scheduleMidnight(ctx)
         scheduleReminder(ctx)
-        Repo.running().forEach { scheduleOverdue(ctx, it.id, it.start) }
+        Repo.running().forEach { s ->
+            if (!Repo.isPaused(s.id)) scheduleOverdue(ctx, s.id, Repo.activeMs(s))
+        }
     }
 
     /** Po północy powiadomienia liczników wracają do zera. */
@@ -51,16 +53,17 @@ object Alarms {
         at(ctx, dt.atZone(Dates.zone).toInstant().toEpochMilli(), p)
     }
 
-    fun scheduleOverdue(ctx: Context, sessionId: Long, start: Long) {
+    /** Ustawia alarm na moment, w którym czas aktywny (bez pauz) przekroczy próg z ustawień. */
+    fun scheduleOverdue(ctx: Context, sessionId: Long, activeSoFar: Long) {
         val p = pi(ctx, OVERDUE, 10_000 + sessionId.toInt(), sessionId) ?: return
         val h = Prefs.overdueHours(ctx)
         if (h <= 0) {
             am(ctx).cancel(p)
             return
         }
-        val t = start + h * 3_600_000L
-        if (t <= System.currentTimeMillis()) return
-        at(ctx, t, p)
+        val remaining = h * 3_600_000L - activeSoFar
+        if (remaining <= 0L) return
+        at(ctx, System.currentTimeMillis() + remaining, p)
     }
 
     fun cancelOverdue(ctx: Context, sessionId: Long) {
@@ -88,9 +91,17 @@ class AlarmReceiver : BroadcastReceiver() {
             }
             Alarms.OVERDUE -> {
                 val s = Repo.session(intent.getLongExtra(EXTRA_ID, -1L)) ?: return
-                if (s.end != null) return
+                if (s.end != null || Repo.isPaused(s.id)) return
                 val t = Repo.tracker(s.trackerId) ?: return
-                Notifier.overdue(ctx, s, t)
+                val active = Repo.activeMs(s)
+                val limit = Prefs.overdueHours(ctx) * 3_600_000L
+                if (limit <= 0L) return
+                if (active < limit - 60_000L) {
+                    // Były pauzy — próg jeszcze nie minął, przesuń alarm.
+                    Alarms.scheduleOverdue(ctx, s.id, active)
+                } else {
+                    Notifier.overdue(ctx, s, t, active)
+                }
             }
         }
     }
@@ -99,6 +110,7 @@ class AlarmReceiver : BroadcastReceiver() {
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) {
         Repo.init(ctx)
+        if (intent.action == Intent.ACTION_BOOT_COMPLETED) Prefs.markRebooted(ctx)
         Notifier.createChannels(ctx)
         Alarms.scheduleAll(ctx)
         Notifier.refresh(ctx)
@@ -111,11 +123,14 @@ class ActionReceiver : BroadcastReceiver() {
         Repo.init(ctx)
         val id = intent.getLongExtra(EXTRA_ID, -1L)
         if (id < 0) return
+        Prefs.touch(ctx)
         when (intent.action) {
             ACTION_INC -> Repo.increment(id)
             ACTION_DEC -> Repo.decrement(id)
             ACTION_START -> Repo.startSession(id)
             ACTION_STOP -> Repo.stopTracker(id)
+            ACTION_PAUSE -> Repo.pauseTracker(id)
+            ACTION_RESUME -> Repo.resumeTracker(id)
         }
     }
 }

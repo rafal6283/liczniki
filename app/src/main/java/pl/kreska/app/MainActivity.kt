@@ -47,19 +47,38 @@ class MainActivity : ComponentActivity() {
     }
 
     private val tab = mutableIntStateOf(0)
+    private val showResume = mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         Repo.init(this)
-        if (savedInstanceState == null) tab.intValue = intent.getIntExtra(EXTRA_TAB, 0)
-        setContent { KreskaTheme { AppRoot(tab) } }
+        if (savedInstanceState == null) {
+            tab.intValue = intent.getIntExtra(EXTRA_TAB, 0)
+            // Powrót po zamknięciu aplikacji lub restarcie telefonu, gdy coś wciąż trwa.
+            if (Prefs.consumeResumeNeeded(this, Repo.running().isNotEmpty())) {
+                showResume.value = true
+                tab.intValue = 1
+            }
+        }
+        Prefs.touch(this)
+        setContent {
+            KreskaTheme {
+                AppRoot(tab)
+                if (showResume.value) ResumeDialog(onDismiss = { showResume.value = false })
+            }
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         if (intent.hasExtra(EXTRA_TAB)) tab.intValue = intent.getIntExtra(EXTRA_TAB, tab.intValue)
+    }
+
+    override fun onStop() {
+        super.onStop()
+        Prefs.touch(this)
     }
 
     override fun onResume() {

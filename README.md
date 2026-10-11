@@ -6,7 +6,7 @@ Działa offline, dane są tylko na telefonie (SQLite). Android 8.0 lub nowszy.
 ## Co jest w powiadomieniach
 
 - **Licznik** – stałe powiadomienie z dzisiejszym wynikiem, paskiem celu i przyciskami **−** i **+**. Działa z panelu powiadomień i z ekranu blokady, bez otwierania aplikacji.
-- **Typ zdarzenia** – przycisk **Start**. Po starcie powiadomienie zmienia się w stoper z przyciskiem **Stop**.
+- **Typ zdarzenia** – przycisk **Start**. Po starcie powiadomienie zmienia się w stoper z przyciskami **Pauza** i **Stop** (w pauzie: **Wznów**). Stoper pokazuje czas bez pauz.
 - **Cel osiągnięty** – gdy licznik dojdzie do celu dziennego.
 - **Przypomnienie o celach** – o wybranej godzinie, jeśli cel nie jest osiągnięty (włączasz w Ustawieniach, ikona zębatki).
 - **Niezatrzymane zdarzenie** – gdy zdarzenie trwa dłużej niż ustawiony czas (domyślnie 4 h), z przyciskiem „Zatrzymaj teraz”.
@@ -25,6 +25,22 @@ Każda zmiana w gałęzi `main` buduje nową wersję i publikuje ją w zakładce
    (wszystkie wersje są podpisane tym samym kluczem `app/kreska.keystore`).
 
 Alternatywnie: otwórz folder w Android Studio i naciśnij **Run**.
+
+## Statystyki
+
+W zakładce Raporty każda pozycja ma „Pełne statystyki”: podsumowanie z porównaniem do
+poprzedniego okresu, serie dni, wykres dzień po dniu i tydzień po tygodniu, pora dnia
+(godziny i części dnia), rytm dnia (pierwsze/ostatnie kliknięcie, odstępy), dni tygodnia,
+mapa cieplna dzień × godzina, a dla zdarzeń także godziny startu, kiedy zdarzenie trwa,
+rozkład długości, przerwy między zdarzeniami i czas pauz.
+
+## Gdy aplikacja zostanie zamknięta
+
+Wszystko zapisuje się od razu w bazie na telefonie, a czas zdarzeń liczony jest od zapisanej
+godziny startu — zamknięcie aplikacji ani restart telefonu niczego nie gubi. Jeśli przy
+ponownym uruchomieniu coś nadal trwa, a aplikacja nie była używana przez ponad 30 minut
+(lub telefon się restartował), pojawi się ekran „Witaj z powrotem” z opcjami: kontynuuj,
+pauza, zatrzymaj teraz albo zakończ o wybranej godzinie.
 
 ## Uwagi
 

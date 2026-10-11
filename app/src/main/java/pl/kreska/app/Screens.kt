@@ -1,6 +1,7 @@
 package pl.kreska.app
 
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -64,7 +65,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import java.time.LocalDate
-import kotlin.math.roundToInt
 
 /* ---------- wspólne elementy ---------- */
 
@@ -245,6 +245,7 @@ fun EventsScreen(v: Long) {
     val trackers = remember(v) { Repo.trackers() }
     val running = remember(v) { Repo.running().associateBy { it.trackerId } }
     val recent = remember(v) { Repo.recentSessions(12) }
+    val pauses = remember(v) { Repo.pausesFor((running.values.map { it.id } + recent.map { it.id }).toSet()) }
     val byId = trackers.associateBy { it.id }
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     val hasRunning = running.isNotEmpty()
@@ -259,13 +260,13 @@ fun EventsScreen(v: Long) {
     var sessionEdit by remember { mutableStateOf<SessionEdit?>(null) }
 
     LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item { SectionTitle("Zdarzenia", "start i koniec") }
+        item { SectionTitle("Zdarzenia", "start, pauza, stop") }
         if (trackers.isEmpty()) {
             item {
                 EmptyCard(
                     "Brak typów zdarzeń",
                     "Co chcesz mierzyć w czasie?",
-                    "Naciśnij Start, gdy coś się zaczyna, i Stop, gdy się kończy — także z powiadomienia. Zdarzenia z przeszłości dopiszesz ręcznie.",
+                    "Naciśnij Start, gdy coś się zaczyna, i Stop, gdy się kończy — także z powiadomienia. W trakcie możesz zrobić pauzę. Zdarzenia z przeszłości dopiszesz ręcznie.",
                 ) {
                     QuickRow(listOf("Praca", "Sen", "Ból głowy", "Trening")) { name ->
                         Repo.saveTracker(Tracker(0, name, Palette.nextFree(trackers.map { it.color }), true))
@@ -277,7 +278,7 @@ fun EventsScreen(v: Long) {
         }
         items(trackers, key = { it.id }) { t ->
             val s = running[t.id]
-            if (s != null) RunningCard(t, s, now, onEdit = { sessionEdit = SessionEdit(s, t.id) })
+            if (s != null) RunningCard(t, s, pauses[s.id] ?: emptyList(), now, onEdit = { sessionEdit = SessionEdit(s, t.id) })
             else TrackerCard(t, v, onEdit = { editingTracker = t }, onAdd = { sessionEdit = SessionEdit(null, t.id) })
         }
         if (trackers.isNotEmpty()) {
@@ -288,7 +289,10 @@ fun EventsScreen(v: Long) {
                 Spacer(Modifier.height(10.dp))
                 Text("Ostatnie wpisy", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             }
-            items(recent, key = { "s${it.id}" }) { s -> SessionRow(s, byId[s.trackerId], now) { sessionEdit = SessionEdit(s, s.trackerId) } }
+            items(recent, key = { "s${it.id}" }) { s ->
+                val ps = pauses[s.id] ?: emptyList()
+                SessionRow(s, byId[s.trackerId], now, Stats.activeMs(s, ps, now), ps.size) { sessionEdit = SessionEdit(s, s.trackerId) }
+            }
         }
     }
 
@@ -298,26 +302,43 @@ fun EventsScreen(v: Long) {
 }
 
 @Composable
-fun RunningCard(t: Tracker, s: Session, now: Long, onEdit: () -> Unit) {
+fun RunningCard(t: Tracker, s: Session, pauses: List<Pause>, now: Long, onEdit: () -> Unit) {
     val live = Palette.live()
-    AppCard(container = Palette.liveSoft(), border = live) {
+    val open = pauses.firstOrNull { it.end == null }
+    val paused = open != null
+    val active = Stats.activeMs(s, pauses, now)
+    val pausedMs = now - s.start - active
+    val accent = if (paused) MaterialTheme.colorScheme.onSurfaceVariant else live
+    AppCard(
+        container = if (paused) MaterialTheme.colorScheme.surfaceVariant else Palette.liveSoft(),
+        border = accent,
+    ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Swatch(Palette.color(t.color))
             Spacer(Modifier.width(8.dp))
             Text(t.name, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-            Text("TRWA", style = MaterialTheme.typography.labelSmall, color = live, fontWeight = FontWeight.Bold)
+            Text(if (paused) "PAUZA" else "TRWA", style = MaterialTheme.typography.labelSmall, color = accent, fontWeight = FontWeight.Bold)
         }
         Spacer(Modifier.height(6.dp))
-        Text(Dates.clock(now - s.start), fontSize = 34.sp, fontFamily = FontFamily.Monospace, color = live, fontWeight = FontWeight.Medium)
+        Text(Dates.clock(active), fontSize = 34.sp, fontFamily = FontFamily.Monospace, color = accent, fontWeight = FontWeight.Medium)
         val startedToday = Dates.keyOf(s.start) == Dates.todayKey()
+        val pauseInfo = when {
+            open != null -> " · wstrzymane o ${Dates.hm(open.start)}"
+            pauses.isNotEmpty() -> " · pauzy: ${pauses.size} (${Dates.dur(pausedMs)})"
+            else -> ""
+        }
         Text(
-            "od ${Dates.hm(s.start)}" + if (startedToday) "" else ", ${Dates.dayOf(s.start)}",
+            "od ${Dates.hm(s.start)}" + (if (startedToday) "" else ", ${Dates.dayOf(s.start)}") + pauseInfo,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.height(10.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = onEdit) { Text("Edytuj") }
+            OutlinedButton(onClick = onEdit, contentPadding = PaddingValues(horizontal = 12.dp)) { Text("Edytuj") }
+            OutlinedButton(
+                onClick = { if (paused) Repo.resumeSession(s.id) else Repo.pauseSession(s.id) },
+                modifier = Modifier.weight(1f),
+            ) { Text(if (paused) "Wznów" else "Pauza", fontWeight = FontWeight.SemiBold) }
             Button(
                 onClick = { Repo.stopSession(s.id) },
                 colors = ButtonDefaults.buttonColors(containerColor = live, contentColor = Palette.onColor()),
@@ -330,15 +351,15 @@ fun RunningCard(t: Tracker, s: Session, now: Long, onEdit: () -> Unit) {
 @Composable
 fun TrackerCard(t: Tracker, v: Long, onEdit: () -> Unit, onAdd: () -> Unit) {
     val last = remember(v, t.id) { Repo.lastFinished(t.id) }
+    val lastActive = remember(v, t.id) { last?.let { Repo.activeMs(it) } }
     AppCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Swatch(Palette.color(t.color))
             Spacer(Modifier.width(8.dp))
             Column(Modifier.weight(1f)) {
                 Text(t.name, fontWeight = FontWeight.SemiBold)
-                val lastEnd = last?.end
                 Text(
-                    if (last != null && lastEnd != null) "ostatnio ${Dates.dayOf(last.start)}, ${Dates.dur(lastEnd - last.start)}" else "brak wpisów",
+                    if (last != null && lastActive != null) "ostatnio ${Dates.dayOf(last.start)}, ${Dates.dur(lastActive)}" else "brak wpisów",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -354,8 +375,9 @@ fun TrackerCard(t: Tracker, v: Long, onEdit: () -> Unit, onAdd: () -> Unit) {
 }
 
 @Composable
-fun SessionRow(s: Session, t: Tracker?, now: Long, onEdit: () -> Unit) {
+fun SessionRow(s: Session, t: Tracker?, now: Long, activeMs: Long?, pauseCount: Int, onEdit: () -> Unit) {
     val end = s.end
+    val active = activeMs ?: ((end ?: now) - s.start)
     Column {
         Row(
             Modifier.fillMaxWidth().clickable(onClick = onEdit).padding(vertical = 10.dp),
@@ -366,14 +388,15 @@ fun SessionRow(s: Session, t: Tracker?, now: Long, onEdit: () -> Unit) {
             Column(Modifier.weight(1f)) {
                 Text(t?.name ?: "(usunięty)", fontWeight = FontWeight.SemiBold)
                 Text(
-                    "${Dates.dayOf(s.start)}, ${Dates.hm(s.start)}" + (if (end != null) "–${Dates.hm(end)}" else ""),
+                    "${Dates.dayOf(s.start)}, ${Dates.hm(s.start)}" + (if (end != null) "–${Dates.hm(end)}" else "") +
+                        (if (pauseCount > 0) " · pauzy: $pauseCount" else ""),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 if (s.note.isNotBlank()) Text(s.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Text(
-                if (end != null) Dates.dur(end - s.start) else "trwa ${Dates.dur(now - s.start)}",
+                if (end != null) Dates.dur(active) else "trwa ${Dates.dur(active)}",
                 fontFamily = FontFamily.Monospace,
                 fontSize = 14.sp,
                 color = if (end != null) MaterialTheme.colorScheme.onSurface else Palette.live(),
@@ -400,16 +423,18 @@ fun StatsGrid(items: List<Pair<String, String>>) {
         items.chunked(2).forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 row.forEach { (v, l) -> Stat(v, l, Modifier.weight(1f)) }
+                if (row.size == 1) Spacer(Modifier.weight(1f))
             }
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReportsScreen(v: Long) {
     val ctx = LocalContext.current
     var range by rememberSaveable { mutableIntStateOf(30) }
+    var detailCounter by rememberSaveable { mutableLongStateOf(-1L) }
+    var detailTracker by rememberSaveable { mutableLongStateOf(-1L) }
     val to = LocalDate.now()
     val from = to.minusDays(range - 1L)
     val days = remember(range, v) { (0 until range).map { from.plusDays(it.toLong()) } }
@@ -429,28 +454,40 @@ fun ReportsScreen(v: Long) {
         }
     }
 
-    LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item {
-            SectionTitle("Raporty")
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(7, 30, 90, 365).forEach { r ->
-                    FilterChip(selected = range == r, onClick = { range = r }, label = { Text(if (r == 365) "rok" else "$r dni") })
+    val dc = if (detailCounter >= 0) counters.firstOrNull { it.id == detailCounter } else null
+    val dt = if (detailTracker >= 0) trackers.firstOrNull { it.id == detailTracker } else null
+
+    when {
+        dc != null -> {
+            BackHandler { detailCounter = -1L }
+            CounterDetail(dc, days, range, { range = it }, v, onBack = { detailCounter = -1L }, onSetDay = { dayValueFor = dc })
+        }
+        dt != null -> {
+            BackHandler { detailTracker = -1L }
+            TrackerDetail(
+                dt, days, range, { range = it }, v,
+                onBack = { detailTracker = -1L },
+                onEdit = { s -> sessionEdit = SessionEdit(s, dt.id) },
+                onAdd = { sessionEdit = SessionEdit(null, dt.id) },
+            )
+        }
+        else -> LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            item {
+                SectionTitle("Raporty")
+                RangeChips(range) { range = it }
+            }
+            if (counters.isEmpty() && trackers.isEmpty()) {
+                item {
+                    EmptyCard("Brak danych", "Tu pojawią się wykresy", "Dodaj licznik albo typ zdarzenia, a raporty zbudują się same.") {}
                 }
             }
-        }
-        if (counters.isEmpty() && trackers.isEmpty()) {
-            item {
-                EmptyCard("Brak danych", "Tu pojawią się wykresy", "Dodaj licznik albo typ zdarzenia, a raporty zbudują się same.") {}
-            }
-        }
-        items(counters, key = { "c${it.id}" }) { c -> CounterReport(c, days, v) { dayValueFor = c } }
-        items(trackers, key = { "t${it.id}" }) { t ->
-            TrackerReport(t, days, v, onEdit = { s -> sessionEdit = SessionEdit(s, t.id) }, onAdd = { sessionEdit = SessionEdit(null, t.id) })
-        }
-        if (counters.isNotEmpty() || trackers.isNotEmpty()) {
-            item {
-                OutlinedButton(onClick = { export.launch("kreska-$to.csv") }, modifier = Modifier.fillMaxWidth()) {
-                    Text("Eksportuj CSV (${if (range == 365) "rok" else "$range dni"})")
+            items(counters, key = { "c${it.id}" }) { c -> CounterReport(c, days, v) { detailCounter = c.id } }
+            items(trackers, key = { "t${it.id}" }) { t -> TrackerReport(t, days, v) { detailTracker = t.id } }
+            if (counters.isNotEmpty() || trackers.isNotEmpty()) {
+                item {
+                    OutlinedButton(onClick = { export.launch("kreska-$to.csv") }, modifier = Modifier.fillMaxWidth()) {
+                        Text("Eksportuj CSV (${if (range == 365) "rok" else "$range dni"})")
+                    }
                 }
             }
         }
@@ -461,16 +498,13 @@ fun ReportsScreen(v: Long) {
 }
 
 @Composable
-fun CounterReport(c: Counter, days: List<LocalDate>, v: Long, onSetDay: () -> Unit) {
-    val totals = remember(v, days, c.id) { Repo.dailyTotals(c.id, days.first(), days.last()) }
-    val values = days.map { (totals[it.toString()] ?: 0).toFloat() }
+fun CounterReport(c: Counter, days: List<LocalDate>, v: Long, onOpen: () -> Unit) {
+    val st = remember(v, days, c.id) { Stats.counter(c, days) }
     val n = days.size
-    val sum = values.sum()
-    val bestIdx = values.indices.maxByOrNull { values[it] } ?: -1
-    val best = if (bestIdx >= 0) values[bestIdx] else 0f
-    val goal = c.goal
     val col = Palette.color(c.color)
-    var expanded by rememberSaveable(c.id) { mutableStateOf(false) }
+    val tr = Stats.trend(st.sum.toDouble(), st.prevSum.toDouble())
+    var peak = -1
+    for (i in 0 until 24) if (st.hours[i] > 0f && (peak < 0 || st.hours[i] > st.hours[peak])) peak = i
 
     AppCard {
         Eyebrow("Licznik")
@@ -481,59 +515,26 @@ fun CounterReport(c: Counter, days: List<LocalDate>, v: Long, onSetDay: () -> Un
         }
         StatsGrid(
             listOf(
-                Num.fmt(sum) to "suma",
-                Num.fmt(sum / n) to "średnio / dzień",
-                (if (best > 0f) Num.fmt(best) else "–") to (if (best > 0f) "rekord, ${Dates.day(days[bestIdx])}" else "rekord"),
-                if (goal != null) "${values.count { it >= goal }}/$n" to "dni z celem"
-                else "${values.count { it > 0f }}/$n" to "dni z wpisem",
+                Num.fmt(st.sum) to ("suma" + if (tr != null) " ($tr)" else ""),
+                Num.fmt(st.avgPerDay) to "średnio / dzień",
+                (if (st.bestIdx >= 0) Num.fmt(st.values[st.bestIdx]) else "–") to
+                    (if (st.bestIdx >= 0) "rekord, ${Dates.day(days[st.bestIdx])}" else "rekord"),
+                (if (st.goalDays != null) "${st.goalDays}/$n" else "${st.activeDays}/$n") to
+                    (if (st.goalDays != null) "dni z celem" else "dni z wpisem"),
+                (if (peak >= 0) "$peak:00" else "–") to "najczęstsza godzina",
+                "${st.streakCurrent} d" to "obecna seria",
             )
         )
-        BarChart(days, values, col) { Num.fmt(it) }
-        TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "Ukryj szczegóły" else "Szczegóły i korekty") }
-        if (expanded) {
-            val hours = remember(v, days, c.id) { Repo.hourly(c.id, days.first(), days.last()) }
-            Eyebrow("O której godzinie")
-            Spacer(Modifier.height(6.dp))
-            if (hours.any { it > 0 }) HourChart(hours, col)
-            else Text("Brak kliknięć w tym okresie.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.height(12.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.weight(1f)) { Eyebrow("Dni z wpisem") }
-                TextButton(onClick = onSetDay) { Text("Ustaw wartość dnia") }
-            }
-            val rows = days.indices.filter { values[it] != 0f }.reversed()
-            if (rows.isEmpty()) {
-                Text("Brak wpisów w tym okresie.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            rows.take(60).forEach { i ->
-                Row(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-                    Text(Dates.day(days[i]), modifier = Modifier.weight(1f))
-                    Text(Num.fmt(values[i]), fontFamily = FontFamily.Monospace)
-                }
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            }
-            if (rows.size > 60) Text("Pokazano 60 ostatnich dni z wpisem.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
+        BarChart(days, st.values, col) { Num.fmt(it) }
+        TextButton(onClick = onOpen, contentPadding = PaddingValues(horizontal = 0.dp)) { Text("Pełne statystyki →") }
     }
 }
 
-private fun fmtMinutes(m: Float): String = if (m >= 90f) Num.fmt(m / 60f) + " h" else "${m.roundToInt()} min"
-
 @Composable
-fun TrackerReport(t: Tracker, days: List<LocalDate>, v: Long, onEdit: (Session) -> Unit, onAdd: () -> Unit) {
-    val sessions = remember(v, days, t.id) { Repo.sessions(t.id, Dates.startOf(days.first())) }
-    val now = System.currentTimeMillis()
-    val durations = sessions.map { (it.end ?: now) - it.start }
-    val total = durations.sum()
-    val longest = durations.maxOrNull() ?: 0L
-    val byDay = HashMap<String, Long>()
-    sessions.forEachIndexed { i, s ->
-        val k = Dates.keyOf(s.start)
-        byDay[k] = (byDay[k] ?: 0L) + durations[i]
-    }
-    val values = days.map { (byDay[it.toString()] ?: 0L) / 60_000f }
+fun TrackerReport(t: Tracker, days: List<LocalDate>, v: Long, onOpen: () -> Unit) {
+    val st = remember(v, days, t.id) { Stats.tracker(t, days) }
     val col = Palette.color(t.color)
-    var expanded by rememberSaveable(t.id) { mutableStateOf(false) }
+    val trT = Stats.trend(st.totalMs.toDouble(), st.prevTotalMs.toDouble())
 
     AppCard {
         Eyebrow("Zdarzenie")
@@ -544,24 +545,15 @@ fun TrackerReport(t: Tracker, days: List<LocalDate>, v: Long, onEdit: (Session) 
         }
         StatsGrid(
             listOf(
-                "${sessions.size}" to "razy",
-                (if (total > 0) Dates.dur(total) else "–") to "łącznie",
-                (if (sessions.isNotEmpty()) Dates.dur(total / sessions.size) else "–") to "średnio",
-                (if (longest > 0) Dates.dur(longest) else "–") to "najdłużej",
+                "${st.count}" to "razy",
+                (if (st.totalMs > 0) Dates.dur(st.totalMs) else "–") to ("łącznie" + if (trT != null) " ($trT)" else ""),
+                (if (st.count > 0) Dates.dur(st.avgMs) else "–") to "średnio",
+                (if (st.count > 0) Dates.dur(st.longestMs) else "–") to "najdłużej",
+                Stats.hhmm(st.avgStartMin) to "średni start",
+                "${st.streakCurrent} d" to "obecna seria",
             )
         )
-        BarChart(days, values, col) { fmtMinutes(it) }
-        TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "Ukryj listę" else "Lista wpisów (${sessions.size})") }
-        if (expanded) {
-            Row {
-                Spacer(Modifier.weight(1f))
-                TextButton(onClick = onAdd) { Text("Dopisz zdarzenie") }
-            }
-            if (sessions.isEmpty()) {
-                Text("Brak wpisów w tym okresie.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            sessions.take(80).forEach { s -> SessionRow(s, t, now) { onEdit(s) } }
-            if (sessions.size > 80) Text("Pokazano 80 najnowszych.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
+        BarChart(days, st.dailyMinutes, col) { Stats.minutesLabel(it) }
+        TextButton(onClick = onOpen, contentPadding = PaddingValues(horizontal = 0.dp)) { Text("Pełne statystyki →") }
     }
 }

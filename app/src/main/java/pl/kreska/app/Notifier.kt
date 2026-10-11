@@ -15,6 +15,8 @@ const val ACTION_INC = "pl.kreska.app.INC"
 const val ACTION_DEC = "pl.kreska.app.DEC"
 const val ACTION_START = "pl.kreska.app.START"
 const val ACTION_STOP = "pl.kreska.app.STOP"
+const val ACTION_PAUSE = "pl.kreska.app.PAUSE"
+const val ACTION_RESUME = "pl.kreska.app.RESUME"
 
 object Notifier {
     const val CH_PANEL = "panel"
@@ -143,12 +145,28 @@ object Notifier {
             .setSortKey(String.format(java.util.Locale.ROOT, "b%04d", order))
             .setContentIntent(openApp(ctx, 1))
         if (s != null) {
-            b.setContentTitle("${t.name} · trwa")
-                .setContentText("od ${Dates.hm(s.start)}")
-                .setUsesChronometer(true)
-                .setShowWhen(true)
-                .setWhen(s.start)
-                .addAction(0, "Stop", action(ctx, ACTION_STOP, t.id, req + 1))
+            val pauses = Repo.pauses(s.id)
+            val now = System.currentTimeMillis()
+            val active = Stats.activeMs(s, pauses, now)
+            val open = pauses.firstOrNull { it.end == null }
+            val pausedMs = now - s.start - active
+            val pauseInfo = if (pauses.isNotEmpty()) " · pauzy: ${pauses.size} (${Dates.dur(pausedMs)})" else ""
+            if (open != null) {
+                b.setContentTitle("${t.name} · pauza")
+                    .setContentText("Czas ${Dates.clock(active)} · wstrzymane o ${Dates.hm(open.start)}")
+                    .setShowWhen(false)
+                    .addAction(0, "Wznów", action(ctx, ACTION_RESUME, t.id, req + 3))
+                    .addAction(0, "Stop", action(ctx, ACTION_STOP, t.id, req + 1))
+            } else {
+                // Stoper liczy od (teraz − czas aktywny), więc pokazuje czas bez pauz.
+                b.setContentTitle("${t.name} · trwa")
+                    .setContentText("od ${Dates.hm(s.start)}$pauseInfo")
+                    .setUsesChronometer(true)
+                    .setShowWhen(true)
+                    .setWhen(now - active)
+                    .addAction(0, "Pauza", action(ctx, ACTION_PAUSE, t.id, req + 0))
+                    .addAction(0, "Stop", action(ctx, ACTION_STOP, t.id, req + 1))
+            }
         } else {
             val last = Repo.lastFinished(t.id)
             val lastEnd = last?.end
@@ -193,11 +211,11 @@ object Notifier {
         post(ctx, ID_REMINDER, n)
     }
 
-    fun overdue(ctx: Context, s: Session, t: Tracker) {
+    fun overdue(ctx: Context, s: Session, t: Tracker, activeMs: Long) {
         val n = NotificationCompat.Builder(ctx, CH_REMIND)
             .setSmallIcon(R.drawable.ic_stat_timer)
             .setColor(Palette.lightArgb(t.color))
-            .setContentTitle("${t.name} trwa już ${Dates.dur(System.currentTimeMillis() - s.start)}")
+            .setContentTitle("${t.name} trwa już ${Dates.dur(activeMs)}")
             .setContentText("Zaczęte ${Dates.dateTime(s.start)}. Czy zapomniałeś zatrzymać?")
             .setAutoCancel(true)
             .setContentIntent(openApp(ctx, 1))

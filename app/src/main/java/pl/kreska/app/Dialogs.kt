@@ -31,6 +31,8 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -248,6 +250,7 @@ fun SessionDialog(session: Session?, trackerId: Long, onDismiss: () -> Unit) {
     var note by remember { mutableStateOf(session?.note ?: "") }
     var err by remember { mutableStateOf<String?>(null) }
     val isRunning = session != null && session.end == null
+    var pauseVersion by remember { mutableIntStateOf(0) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -267,6 +270,22 @@ fun SessionDialog(session: Session?, trackerId: Long, onDismiss: () -> Unit) {
                     label = { Text("Notatka") }, placeholder = { Text("opcjonalnie") },
                     modifier = Modifier.fillMaxWidth(),
                 )
+                if (session != null) {
+                    val pauses = remember(pauseVersion) { Repo.pauses(session.id) }
+                    if (pauses.isNotEmpty()) {
+                        val total = (session.end ?: System.currentTimeMillis()) - session.start -
+                            Stats.activeMs(session, pauses, System.currentTimeMillis())
+                        Text(
+                            "Pauzy: ${pauses.size}, łącznie ${Dates.dur(total)}. Czas zdarzenia nie obejmuje pauz.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        DeleteButton("Usuń pauzy", "Na pewno? Cały czas będzie liczony") {
+                            Repo.clearPauses(session.id)
+                            pauseVersion++
+                        }
+                    }
+                }
                 ErrorText(err)
                 if (session != null) {
                     DeleteButton("Usuń wpis", "Na pewno usunąć?") {
@@ -399,5 +418,57 @@ fun SettingsDialog(onDismiss: () -> Unit) {
             }) { Text("Zapisz") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Anuluj") } },
+    )
+}
+
+/* ---------- powrót po zamknięciu aplikacji ---------- */
+
+/** Pokazywany po ponownym uruchomieniu, gdy zdarzenia nadal trwają. */
+@Composable
+fun ResumeDialog(onDismiss: () -> Unit) {
+    val ctx = LocalContext.current
+    val v by Repo.version.collectAsState()
+    val running = remember(v) { Repo.running() }
+    val trackers = remember(v) { Repo.trackers().associateBy { it.id } }
+    val pauses = remember(v) { Repo.pausesFor(running.map { it.id }) }
+    LaunchedEffect(running.isEmpty()) { if (running.isEmpty()) onDismiss() }
+    val now = System.currentTimeMillis()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Witaj z powrotem") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    "Aplikacja była zamknięta, ale te zdarzenia nadal się liczą. Sprawdź, czy wszystko się zgadza.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                running.forEach { s ->
+                    val t = trackers[s.trackerId]
+                    val ps = pauses[s.id] ?: emptyList()
+                    val paused = ps.any { it.end == null }
+                    val active = Stats.activeMs(s, ps, now)
+                    HorizontalDivider()
+                    Text(t?.name ?: "Zdarzenie", fontWeight = FontWeight.SemiBold)
+                    Text(
+                        (if (paused) "Pauza · " else "Trwa · ") + "${Dates.dur(active)} (od ${Dates.dateTime(s.start)})",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        TextButton(onClick = { if (paused) Repo.resumeSession(s.id) else Repo.pauseSession(s.id) }) {
+                            Text(if (paused) "Wznów" else "Pauza")
+                        }
+                        TextButton(onClick = { Repo.stopSession(s.id) }) { Text("Zatrzymaj teraz") }
+                        TextButton(onClick = {
+                            pickDateTime(ctx, now) { endTs ->
+                                if (endTs > s.start) Repo.saveSession(s.copy(end = endTs))
+                            }
+                        }) { Text("Zakończ o…") }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Kontynuuj") } },
     )
 }
