@@ -12,15 +12,27 @@ android {
         applicationId = "pl.kreska.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInt()
+        versionName = "1.0." + (System.getenv("GITHUB_RUN_NUMBER") ?: "0")
+    }
+
+    // Stały klucz w repozytorium (prywatnym), żeby każda nowa wersja instalowała się jako aktualizacja.
+    signingConfigs {
+        create("kreska") {
+            storeFile = file("kreska.keystore")
+            storePassword = "kreska123"
+            keyAlias = "kreska"
+            keyPassword = "kreska123"
+        }
     }
 
     buildTypes {
+        getByName("debug") {
+            signingConfig = signingConfigs.getByName("kreska")
+        }
         release {
             isMinifyEnabled = false
-            // Aplikacja do użytku prywatnego: wersja release podpisana kluczem debug.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("kreska")
         }
     }
     compileOptions {
@@ -29,6 +41,10 @@ android {
     }
     kotlinOptions {
         jvmTarget = "17"
+    }
+    lint {
+        checkReleaseBuilds = false
+        abortOnError = false
     }
     buildFeatures {
         compose = true

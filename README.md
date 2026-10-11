@@ -16,19 +16,15 @@ powiadomień (np. wyciszenie przypomnień) zmienisz w ustawieniach systemu.
 
 ## Jak zainstalować
 
-### Sposób 1: GitHub buduje APK (bez instalowania niczego)
+Każda zmiana w gałęzi `main` buduje nową wersję i publikuje ją w zakładce
+**Releases** tego repozytorium.
 
-1. Załóż na github.com **prywatne** repozytorium, np. `kreska`.
-2. Wgraj do niego całą zawartość tego folderu (Add file → Upload files; przeciągnij wszystko, łącznie z ukrytym folderem `.github`). Jeśli przeglądarka pominie `.github`, utwórz plik `.github/workflows/build.yml` ręcznie i wklej jego treść.
-3. Wejdź w zakładkę **Actions** – budowanie startuje samo (ok. 5 min).
-4. Po zielonym ✓ otwórz przebieg, na dole w **Artifacts** pobierz `kreska-apk` (zip z plikiem `app-debug.apk`).
-5. Przenieś APK na telefon, otwórz go i zezwól na instalację z nieznanego źródła.
+1. Na telefonie zaloguj się na github.com i otwórz **Releases** → najnowsza wersja.
+2. Pobierz **kreska.apk** i otwórz plik. Zezwól na instalację z tego źródła.
+3. Kolejne wersje instaluj tak samo — zastępują poprzednią, dane zostają
+   (wszystkie wersje są podpisane tym samym kluczem `app/kreska.keystore`).
 
-### Sposób 2: Android Studio
-
-1. Otwórz ten folder w Android Studio (File → Open).
-2. Podłącz telefon z włączonym debugowaniem USB i naciśnij **Run**.
-   Albo: Build → Build APK(s).
+Alternatywnie: otwórz folder w Android Studio i naciśnij **Run**.
 
 ## Uwagi
 
