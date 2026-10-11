@@ -1,0 +1,567 @@
+package pl.kreska.app
+
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
+import java.time.LocalDate
+import kotlin.math.roundToInt
+
+/* ---------- wspólne elementy ---------- */
+
+@Composable
+fun Swatch(color: Color, size: Int = 10) {
+    Box(Modifier.size(size.dp).clip(RoundedCornerShape(3.dp)).background(color))
+}
+
+@Composable
+fun Eyebrow(text: String) {
+    Text(
+        text.uppercase(Dates.PL),
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        letterSpacing = 1.sp,
+    )
+}
+
+@Composable
+fun SectionTitle(title: String, sub: String? = null) {
+    Row(Modifier.fillMaxWidth().padding(bottom = 4.dp), verticalAlignment = Alignment.Bottom) {
+        Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+        if (sub != null) Text(sub, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+fun AppCard(container: Color = MaterialTheme.colorScheme.surface, border: Color = MaterialTheme.colorScheme.outlineVariant, content: @Composable ColumnScope.() -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = container),
+        border = BorderStroke(1.dp, border),
+    ) {
+        Column(Modifier.padding(16.dp), content = content)
+    }
+}
+
+@Composable
+fun EmptyCard(eyebrow: String, title: String, body: String, actions: @Composable ColumnScope.() -> Unit) {
+    AppCard {
+        Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Eyebrow(eyebrow)
+            Spacer(Modifier.height(6.dp))
+            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(6.dp))
+            Text(body, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(14.dp))
+            actions()
+        }
+    }
+}
+
+@Composable
+fun QuickRow(names: List<String>, onPick: (String) -> Unit) {
+    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        names.forEach { n -> OutlinedButton(onClick = { onPick(n) }) { Text("+ $n") } }
+    }
+}
+
+@Composable
+fun MoreButton(desc: String, onClick: () -> Unit) {
+    IconButton(onClick = onClick, modifier = Modifier.size(36.dp)) {
+        Icon(Icons.Filled.MoreVert, contentDescription = desc, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/* ---------- Liczniki ---------- */
+
+@Composable
+fun CountersScreen(v: Long) {
+    val counters = remember(v) { Repo.counters() }
+    var editing by remember { mutableStateOf<Counter?>(null) }
+    var creating by remember { mutableStateOf(false) }
+
+    LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item { SectionTitle("Dziś", Dates.longDay(LocalDate.now())) }
+        if (counters.isEmpty()) {
+            item {
+                EmptyCard(
+                    "Brak liczników",
+                    "Co chcesz liczyć?",
+                    "Każde stuknięcie w duży przycisk dodaje kreskę do dzisiejszego wyniku. Licznik pojawi się też w powiadomieniach z przyciskami + i −.",
+                ) {
+                    QuickRow(listOf("Szklanki wody", "Pompki", "Kawa", "Przerwy")) { name ->
+                        Repo.saveCounter(Counter(0, name, 1, null, Palette.nextFree(counters.map { it.color }), true))
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Button(onClick = { creating = true }) { Text("Nowy licznik") }
+                }
+            }
+        }
+        items(counters, key = { it.id }) { c -> CounterCard(c, v) { editing = c } }
+        if (counters.isNotEmpty()) {
+            item {
+                OutlinedButton(onClick = { creating = true }, modifier = Modifier.fillMaxWidth()) { Text("+ Nowy licznik") }
+            }
+        }
+    }
+
+    if (creating) CounterDialog(null, Palette.nextFree(counters.map { it.color })) { creating = false }
+    editing?.let { c -> CounterDialog(c, c.color) { editing = null } }
+}
+
+@Composable
+fun CounterCard(c: Counter, v: Long, onEdit: () -> Unit) {
+    val total = remember(v, c.id) { Repo.todayTotal(c.id) }
+    val last = remember(v, c.id) { Repo.lastTap(c.id) }
+    val col = Palette.color(c.color)
+    val haptic = LocalHapticFeedback.current
+    val goal = c.goal
+
+    AppCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Swatch(col)
+                    Spacer(Modifier.width(8.dp))
+                    Text(c.name, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                    MoreButton("Ustawienia licznika ${c.name}", onEdit)
+                }
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text(Num.fmt(total), fontSize = 44.sp, lineHeight = 46.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium)
+                    if (goal != null) {
+                        Text(" / ${Num.fmt(goal)}", fontSize = 18.sp, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 6.dp))
+                    }
+                }
+                Text(
+                    (if (last != null) "ostatnio ${Dates.hm(last)}" else "jeszcze nic dziś") + if (c.step != 1) " · krok ${Num.fmt(c.step)}" else "",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            OutlinedButton(
+                onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    Repo.decrement(c.id)
+                },
+                enabled = total > 0,
+                shape = CircleShape,
+                contentPadding = PaddingValues(0.dp),
+                modifier = Modifier.size(48.dp),
+            ) { Text("−", fontSize = 24.sp) }
+            Spacer(Modifier.width(10.dp))
+            Button(
+                onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    Repo.increment(c.id)
+                },
+                shape = CircleShape,
+                contentPadding = PaddingValues(0.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = col, contentColor = Palette.onColor()),
+                modifier = Modifier.size(84.dp),
+            ) { Text("+${Num.fmt(c.step)}", fontSize = 22.sp, fontFamily = FontFamily.Monospace) }
+        }
+        if (goal != null) {
+            Spacer(Modifier.height(12.dp))
+            LinearProgressIndicator(
+                progress = { (total.toFloat() / goal).coerceIn(0f, 1f) },
+                modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
+                color = col,
+                trackColor = MaterialTheme.colorScheme.surfaceVariant,
+            )
+        }
+        if (c.step == 1 && total in 1..40) {
+            Spacer(Modifier.height(10.dp))
+            Tally(total, col)
+        }
+    }
+}
+
+/* ---------- Zdarzenia ---------- */
+
+data class SessionEdit(val session: Session?, val trackerId: Long)
+
+@Composable
+fun EventsScreen(v: Long) {
+    val trackers = remember(v) { Repo.trackers() }
+    val running = remember(v) { Repo.running().associateBy { it.trackerId } }
+    val recent = remember(v) { Repo.recentSessions(12) }
+    val byId = trackers.associateBy { it.id }
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    val hasRunning = running.isNotEmpty()
+    LaunchedEffect(hasRunning) {
+        while (hasRunning) {
+            now = System.currentTimeMillis()
+            delay(1000)
+        }
+    }
+    var editingTracker by remember { mutableStateOf<Tracker?>(null) }
+    var creating by remember { mutableStateOf(false) }
+    var sessionEdit by remember { mutableStateOf<SessionEdit?>(null) }
+
+    LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item { SectionTitle("Zdarzenia", "start i koniec") }
+        if (trackers.isEmpty()) {
+            item {
+                EmptyCard(
+                    "Brak typów zdarzeń",
+                    "Co chcesz mierzyć w czasie?",
+                    "Naciśnij Start, gdy coś się zaczyna, i Stop, gdy się kończy — także z powiadomienia. Zdarzenia z przeszłości dopiszesz ręcznie.",
+                ) {
+                    QuickRow(listOf("Praca", "Sen", "Ból głowy", "Trening")) { name ->
+                        Repo.saveTracker(Tracker(0, name, Palette.nextFree(trackers.map { it.color }), true))
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Button(onClick = { creating = true }) { Text("Nowy typ zdarzenia") }
+                }
+            }
+        }
+        items(trackers, key = { it.id }) { t ->
+            val s = running[t.id]
+            if (s != null) RunningCard(t, s, now, onEdit = { sessionEdit = SessionEdit(s, t.id) })
+            else TrackerCard(t, v, onEdit = { editingTracker = t }, onAdd = { sessionEdit = SessionEdit(null, t.id) })
+        }
+        if (trackers.isNotEmpty()) {
+            item { OutlinedButton(onClick = { creating = true }, modifier = Modifier.fillMaxWidth()) { Text("+ Nowy typ zdarzenia") } }
+        }
+        if (recent.isNotEmpty()) {
+            item {
+                Spacer(Modifier.height(10.dp))
+                Text("Ostatnie wpisy", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            }
+            items(recent, key = { "s${it.id}" }) { s -> SessionRow(s, byId[s.trackerId], now) { sessionEdit = SessionEdit(s, s.trackerId) } }
+        }
+    }
+
+    if (creating) TrackerDialog(null, Palette.nextFree(trackers.map { it.color })) { creating = false }
+    editingTracker?.let { t -> TrackerDialog(t, t.color) { editingTracker = null } }
+    sessionEdit?.let { e -> SessionDialog(e.session, e.trackerId) { sessionEdit = null } }
+}
+
+@Composable
+fun RunningCard(t: Tracker, s: Session, now: Long, onEdit: () -> Unit) {
+    val live = Palette.live()
+    AppCard(container = Palette.liveSoft(), border = live) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Swatch(Palette.color(t.color))
+            Spacer(Modifier.width(8.dp))
+            Text(t.name, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            Text("TRWA", style = MaterialTheme.typography.labelSmall, color = live, fontWeight = FontWeight.Bold)
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(Dates.clock(now - s.start), fontSize = 34.sp, fontFamily = FontFamily.Monospace, color = live, fontWeight = FontWeight.Medium)
+        val startedToday = Dates.keyOf(s.start) == Dates.todayKey()
+        Text(
+            "od ${Dates.hm(s.start)}" + if (startedToday) "" else ", ${Dates.dayOf(s.start)}",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(10.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = onEdit) { Text("Edytuj") }
+            Button(
+                onClick = { Repo.stopSession(s.id) },
+                colors = ButtonDefaults.buttonColors(containerColor = live, contentColor = Palette.onColor()),
+                modifier = Modifier.weight(1f),
+            ) { Text("Stop", fontWeight = FontWeight.Bold) }
+        }
+    }
+}
+
+@Composable
+fun TrackerCard(t: Tracker, v: Long, onEdit: () -> Unit, onAdd: () -> Unit) {
+    val last = remember(v, t.id) { Repo.lastFinished(t.id) }
+    AppCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Swatch(Palette.color(t.color))
+            Spacer(Modifier.width(8.dp))
+            Column(Modifier.weight(1f)) {
+                Text(t.name, fontWeight = FontWeight.SemiBold)
+                val lastEnd = last?.end
+                Text(
+                    if (last != null && lastEnd != null) "ostatnio ${Dates.dayOf(last.start)}, ${Dates.dur(lastEnd - last.start)}" else "brak wpisów",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            MoreButton("Ustawienia: ${t.name}", onEdit)
+        }
+        Spacer(Modifier.height(10.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = onAdd) { Text("Dopisz") }
+            Button(onClick = { Repo.startSession(t.id) }, modifier = Modifier.weight(1f)) { Text("Start", fontWeight = FontWeight.Bold) }
+        }
+    }
+}
+
+@Composable
+fun SessionRow(s: Session, t: Tracker?, now: Long, onEdit: () -> Unit) {
+    val end = s.end
+    Column {
+        Row(
+            Modifier.fillMaxWidth().clickable(onClick = onEdit).padding(vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Swatch(if (t != null) Palette.color(t.color) else MaterialTheme.colorScheme.outline)
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(t?.name ?: "(usunięty)", fontWeight = FontWeight.SemiBold)
+                Text(
+                    "${Dates.dayOf(s.start)}, ${Dates.hm(s.start)}" + (if (end != null) "–${Dates.hm(end)}" else ""),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (s.note.isNotBlank()) Text(s.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Text(
+                if (end != null) Dates.dur(end - s.start) else "trwa ${Dates.dur(now - s.start)}",
+                fontFamily = FontFamily.Monospace,
+                fontSize = 14.sp,
+                color = if (end != null) MaterialTheme.colorScheme.onSurface else Palette.live(),
+            )
+            Icon(Icons.Filled.Edit, contentDescription = "Edytuj wpis", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 8.dp).size(16.dp))
+        }
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+    }
+}
+
+/* ---------- Raporty ---------- */
+
+@Composable
+fun Stat(value: String, label: String, modifier: Modifier) {
+    Column(modifier) {
+        Text(value, fontFamily = FontFamily.Monospace, fontSize = 19.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+        Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+    }
+}
+
+@Composable
+fun StatsGrid(items: List<Pair<String, String>>) {
+    Column(Modifier.padding(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        items.chunked(2).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                row.forEach { (v, l) -> Stat(v, l, Modifier.weight(1f)) }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ReportsScreen(v: Long) {
+    val ctx = LocalContext.current
+    var range by rememberSaveable { mutableIntStateOf(30) }
+    val to = LocalDate.now()
+    val from = to.minusDays(range - 1L)
+    val days = remember(range, v) { (0 until range).map { from.plusDays(it.toLong()) } }
+    val counters = remember(v) { Repo.counters() }
+    val trackers = remember(v) { Repo.trackers() }
+    var dayValueFor by remember { mutableStateOf<Counter?>(null) }
+    var sessionEdit by remember { mutableStateOf<SessionEdit?>(null) }
+
+    val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
+        if (uri != null) {
+            try {
+                ctx.contentResolver.openOutputStream(uri)?.use { it.write(Repo.csv(from).toByteArray(Charsets.UTF_8)) }
+                Toast.makeText(ctx, "Zapisano plik CSV", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Toast.makeText(ctx, "Nie udało się zapisać pliku", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item {
+            SectionTitle("Raporty")
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(7, 30, 90, 365).forEach { r ->
+                    FilterChip(selected = range == r, onClick = { range = r }, label = { Text(if (r == 365) "rok" else "$r dni") })
+                }
+            }
+        }
+        if (counters.isEmpty() && trackers.isEmpty()) {
+            item {
+                EmptyCard("Brak danych", "Tu pojawią się wykresy", "Dodaj licznik albo typ zdarzenia, a raporty zbudują się same.") {}
+            }
+        }
+        items(counters, key = { "c${it.id}" }) { c -> CounterReport(c, days, v) { dayValueFor = c } }
+        items(trackers, key = { "t${it.id}" }) { t ->
+            TrackerReport(t, days, v, onEdit = { s -> sessionEdit = SessionEdit(s, t.id) }, onAdd = { sessionEdit = SessionEdit(null, t.id) })
+        }
+        if (counters.isNotEmpty() || trackers.isNotEmpty()) {
+            item {
+                OutlinedButton(onClick = { export.launch("kreska-$to.csv") }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Eksportuj CSV (${if (range == 365) "rok" else "$range dni"})")
+                }
+            }
+        }
+    }
+
+    dayValueFor?.let { c -> DayValueDialog(c) { dayValueFor = null } }
+    sessionEdit?.let { e -> SessionDialog(e.session, e.trackerId) { sessionEdit = null } }
+}
+
+@Composable
+fun CounterReport(c: Counter, days: List<LocalDate>, v: Long, onSetDay: () -> Unit) {
+    val totals = remember(v, days, c.id) { Repo.dailyTotals(c.id, days.first(), days.last()) }
+    val values = days.map { (totals[it.toString()] ?: 0).toFloat() }
+    val n = days.size
+    val sum = values.sum()
+    val bestIdx = values.indices.maxByOrNull { values[it] } ?: -1
+    val best = if (bestIdx >= 0) values[bestIdx] else 0f
+    val goal = c.goal
+    val col = Palette.color(c.color)
+    var expanded by rememberSaveable(c.id) { mutableStateOf(false) }
+
+    AppCard {
+        Eyebrow("Licznik")
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Swatch(col)
+            Spacer(Modifier.width(8.dp))
+            Text(c.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        }
+        StatsGrid(
+            listOf(
+                Num.fmt(sum) to "suma",
+                Num.fmt(sum / n) to "średnio / dzień",
+                (if (best > 0f) Num.fmt(best) else "–") to (if (best > 0f) "rekord, ${Dates.day(days[bestIdx])}" else "rekord"),
+                if (goal != null) "${values.count { it >= goal }}/$n" to "dni z celem"
+                else "${values.count { it > 0f }}/$n" to "dni z wpisem",
+            )
+        )
+        BarChart(days, values, col) { Num.fmt(it) }
+        TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "Ukryj szczegóły" else "Szczegóły i korekty") }
+        if (expanded) {
+            val hours = remember(v, days, c.id) { Repo.hourly(c.id, days.first(), days.last()) }
+            Eyebrow("O której godzinie")
+            Spacer(Modifier.height(6.dp))
+            if (hours.any { it > 0 }) HourChart(hours, col)
+            else Text("Brak kliknięć w tym okresie.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(12.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.weight(1f)) { Eyebrow("Dni z wpisem") }
+                TextButton(onClick = onSetDay) { Text("Ustaw wartość dnia") }
+            }
+            val rows = days.indices.filter { values[it] != 0f }.reversed()
+            if (rows.isEmpty()) {
+                Text("Brak wpisów w tym okresie.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            rows.take(60).forEach { i ->
+                Row(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                    Text(Dates.day(days[i]), modifier = Modifier.weight(1f))
+                    Text(Num.fmt(values[i]), fontFamily = FontFamily.Monospace)
+                }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            }
+            if (rows.size > 60) Text("Pokazano 60 ostatnich dni z wpisem.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+private fun fmtMinutes(m: Float): String = if (m >= 90f) Num.fmt(m / 60f) + " h" else "${m.roundToInt()} min"
+
+@Composable
+fun TrackerReport(t: Tracker, days: List<LocalDate>, v: Long, onEdit: (Session) -> Unit, onAdd: () -> Unit) {
+    val sessions = remember(v, days, t.id) { Repo.sessions(t.id, Dates.startOf(days.first())) }
+    val now = System.currentTimeMillis()
+    val durations = sessions.map { (it.end ?: now) - it.start }
+    val total = durations.sum()
+    val longest = durations.maxOrNull() ?: 0L
+    val byDay = HashMap<String, Long>()
+    sessions.forEachIndexed { i, s ->
+        val k = Dates.keyOf(s.start)
+        byDay[k] = (byDay[k] ?: 0L) + durations[i]
+    }
+    val values = days.map { (byDay[it.toString()] ?: 0L) / 60_000f }
+    val col = Palette.color(t.color)
+    var expanded by rememberSaveable(t.id) { mutableStateOf(false) }
+
+    AppCard {
+        Eyebrow("Zdarzenie")
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Swatch(col)
+            Spacer(Modifier.width(8.dp))
+            Text(t.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        }
+        StatsGrid(
+            listOf(
+                "${sessions.size}" to "razy",
+                (if (total > 0) Dates.dur(total) else "–") to "łącznie",
+                (if (sessions.isNotEmpty()) Dates.dur(total / sessions.size) else "–") to "średnio",
+                (if (longest > 0) Dates.dur(longest) else "–") to "najdłużej",
+            )
+        )
+        BarChart(days, values, col) { fmtMinutes(it) }
+        TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "Ukryj listę" else "Lista wpisów (${sessions.size})") }
+        if (expanded) {
+            Row {
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = onAdd) { Text("Dopisz zdarzenie") }
+            }
+            if (sessions.isEmpty()) {
+                Text("Brak wpisów w tym okresie.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            sessions.take(80).forEach { s -> SessionRow(s, t, now) { onEdit(s) } }
+            if (sessions.size > 80) Text("Pokazano 80 najnowszych.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
