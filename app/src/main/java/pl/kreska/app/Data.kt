@@ -321,6 +321,18 @@ object Repo {
             out
         }
 
+    /** Pierwszy dzień z jakimkolwiek wpisem licznika (początek śledzenia). */
+    fun firstDay(counterId: Long): LocalDate? =
+        db.rawQuery("SELECT MIN(day) FROM taps WHERE counter_id=?", args(counterId)).use { c ->
+            if (c.moveToFirst() && !c.isNull(0)) LocalDate.parse(c.getString(0)) else null
+        }
+
+    /** Dzień pierwszego zdarzenia danego typu. */
+    fun firstSessionDay(trackerId: Long): LocalDate? =
+        db.rawQuery("SELECT MIN(start) FROM sessions WHERE tracker_id=?", args(trackerId)).use { c ->
+            if (c.moveToFirst() && !c.isNull(0)) Dates.zdt(c.getLong(0)).toLocalDate() else null
+        }
+
     /** Wszystkie dni (cała historia) z wynikiem dziennym — do liczenia serii. */
     fun allDailyTotals(counterId: Long): Map<String, Int> =
         db.rawQuery("SELECT day, SUM(amount) FROM taps WHERE counter_id=? GROUP BY day", args(counterId)).use { c ->

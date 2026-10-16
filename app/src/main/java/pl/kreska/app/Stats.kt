@@ -12,7 +12,13 @@ data class Interval(val start: Long, val end: Long)
 
 /** Statystyki licznika w wybranym okresie. */
 class CounterStats(
+    /** Dni brane pod uwagę: wybrany okres przycięty do pierwszego wpisu. */
     val days: List<LocalDate>,
+    /** Pełne dni (bez dzisiejszego, który jeszcze trwa) — podstawa średnich. */
+    val fullDays: Int,
+    val since: LocalDate?,
+    val trimmed: Boolean,
+    val trend: String?,
     val values: List<Float>,
     val sum: Float,
     val avgPerDay: Float,
@@ -43,6 +49,13 @@ class CounterStats(
 /** Statystyki typu zdarzenia w wybranym okresie (czasy bez pauz). */
 class TrackerStats(
     val days: List<LocalDate>,
+    val fullDays: Int,
+    val since: LocalDate?,
+    val trimmed: Boolean,
+    val trendTotal: String?,
+    val trendCount: String?,
+    val avgPerDayMs: Long,
+    val countPerDay: Float,
     val sessions: List<Session>,
     val pauses: Map<Long, List<Pause>>,
     val activeBySession: Map<Long, Long>,
@@ -63,6 +76,7 @@ class TrackerStats(
     val startHours: FloatArray,
     val activeHours: FloatArray,
     val heat: Array<FloatArray>,
+    /** Średnia liczba zdarzeń i średni czas (min) w danym dniu tygodnia. */
     val weekdayCount: FloatArray,
     val weekdayMinutes: FloatArray,
     val avgStartMin: Int?,
@@ -169,17 +183,47 @@ object Stats {
         return n
     }
 
+    /**
+     * Okno liczenia: wybrany okres, ale nie wcześniej niż pierwszy wpis.
+     * Dzięki temu średnie nie spadają sztucznie, gdy wybierzesz „rok”, a dane są z tygodnia.
+     */
+    private fun window(days: List<LocalDate>, since: LocalDate?): List<LocalDate> {
+        val today = LocalDate.now()
+        val start = since ?: today
+        val eff = days.filter { !it.isBefore(start) }
+        return if (eff.isEmpty()) listOf(days.last()) else eff
+    }
+
+    /** Dni pełne do średnich: bez dzisiejszego (niepełnego), chyba że to jedyny dzień. */
+    private fun fullDaysOf(eff: List<LocalDate>): List<LocalDate> {
+        val today = LocalDate.now()
+        val full = eff.filter { it != today }
+        return if (full.isEmpty()) eff else full
+    }
+
+    /** Poprzednie okno tej samej długości, też przycięte do pierwszego wpisu. */
+    private fun prevWindow(eff: List<LocalDate>, since: LocalDate?): List<LocalDate> {
+        if (since == null) return emptyList()
+        val n = eff.size.toLong()
+        val first = eff.first()
+        return (1..n).map { first.minusDays(it) }.filter { !it.isBefore(since) }.reversed()
+    }
+
     /* ---------- licznik ---------- */
 
-    fun counter(c: Counter, days: List<LocalDate>): CounterStats {
+    fun counter(c: Counter, requested: List<LocalDate>): CounterStats {
+        val since = Repo.firstDay(c.id)
+        val days = window(requested, since)
         val from = days.first()
         val to = days.last()
         val totals = Repo.dailyTotals(c.id, from, to)
         val values = days.map { (totals[it.toString()] ?: 0).toFloat() }
-        val n = days.size
         val sum = values.sum()
-        val active = values.filter { it > 0f }
-        val activeDays = active.size
+        val activeDays = values.count { it > 0f }
+        val full = fullDaysOf(days).toSet()
+        val fullValues = days.indices.filter { days[it] in full }.map { values[it] }
+        val fullActive = fullValues.filter { it > 0f }
+        val avgPerDay = if (fullValues.isNotEmpty()) fullValues.sum() / fullValues.size else 0f
         var bestIdx = -1
         var worstIdx = -1
         values.forEachIndexed { i, v ->
@@ -189,9 +233,11 @@ object Stats {
         val goal = c.goal
         val goalDays = if (goal != null) values.count { it >= goal } else null
 
-        val prevFrom = from.minusDays(n.toLong())
-        val prevTo = from.minusDays(1)
-        val prevSum = Repo.dailyTotals(c.id, prevFrom, prevTo).values.sum().toFloat()
+        val prevDays = prevWindow(days, since)
+        val prevSum = if (prevDays.isEmpty()) 0f
+        else Repo.dailyTotals(c.id, prevDays.first(), prevDays.last()).values.sum().toFloat()
+        // trend porównuje średnią dzienną, więc różna długość okien nie przekłamuje wyniku
+        val trendStr = if (prevDays.isEmpty()) null else trend(avgPerDay.toDouble(), (prevSum / prevDays.size).toDouble())
 
         // serie z całej historii
         val all = Repo.allDailyTotals(c.id)
@@ -240,18 +286,22 @@ object Stats {
             for (i in 1 until list.size) gaps.add(list[i] - list[i - 1])
         }
 
-        val wdN = weekdayCounts(days)
+        val wdN = weekdayCounts(days.filter { it in full })
         val wdTotal = FloatArray(7)
-        days.forEachIndexed { i, d -> wdTotal[d.dayOfWeek.value - 1] += values[i] }
+        days.forEachIndexed { i, d -> if (d in full) wdTotal[d.dayOfWeek.value - 1] += values[i] }
         val wdAvg = FloatArray(7) { if (wdN[it] > 0) wdTotal[it] / wdN[it] else 0f }
 
         return CounterStats(
             days = days,
+            fullDays = full.size,
+            since = since,
+            trimmed = days.size < requested.size,
+            trend = trendStr,
             values = values,
             sum = sum,
-            avgPerDay = sum / n,
-            avgActiveDay = if (activeDays > 0) active.sum() / activeDays else 0f,
-            median = medianOf(active.map { it.toDouble() }).toFloat(),
+            avgPerDay = avgPerDay,
+            avgActiveDay = if (fullActive.isNotEmpty()) fullActive.sum() / fullActive.size else 0f,
+            median = medianOf(fullActive.map { it.toDouble() }).toFloat(),
             bestIdx = bestIdx,
             worstActiveIdx = worstIdx,
             activeDays = activeDays,
@@ -289,9 +339,12 @@ object Stats {
         }
     }
 
-    fun tracker(t: Tracker, days: List<LocalDate>): TrackerStats {
+    fun tracker(t: Tracker, requested: List<LocalDate>): TrackerStats {
+        val since = Repo.firstSessionDay(t.id)
+        val days = window(requested, since)
         val from = days.first()
         val n = days.size
+        val full = fullDaysOf(days).toSet()
         val now = System.currentTimeMillis()
         val fromTs = Dates.startOf(from)
         val sessions = Repo.sessions(t.id, fromTs)
@@ -318,7 +371,7 @@ object Stats {
             pauseCount += ps.size
             val zs = Dates.zdt(s.start)
             startHours[zs.hour] += 1f
-            wdCount[zs.dayOfWeek.value - 1] += 1f
+            if (zs.toLocalDate() in full) wdCount[zs.dayOfWeek.value - 1] += 1f
             buckets[bucketOf(active)] += 1f
             // rozłóż czas aktywny na godziny i dni (zdarzenie przez północ trafia do obu dni)
             for (iv in ivs) {
@@ -330,7 +383,7 @@ object Stats {
                     val m = (e - cur) / 60_000f
                     activeHours[z.hour] += m
                     heat[z.dayOfWeek.value - 1][z.hour] += m
-                    wdMin[z.dayOfWeek.value - 1] += m
+                    if (z.toLocalDate() in full) wdMin[z.dayOfWeek.value - 1] += m
                     val di = dayIndex[z.toLocalDate().toString()]
                     if (di != null) dailyMin[di] += m
                     cur = e
@@ -351,10 +404,32 @@ object Stats {
             if (g > 0) gaps.add(g)
         }
 
-        val prevFromTs = Dates.startOf(from.minusDays(n.toLong()))
-        val prev = Repo.sessions(t.id, prevFromTs).filter { it.start < fromTs }
+        val prevDays = prevWindow(days, since)
+        val prev = if (prevDays.isEmpty()) emptyList()
+        else Repo.sessions(t.id, Dates.startOf(prevDays.first())).filter { it.start < fromTs }
         val prevPauses = Repo.pausesFor(prev.map { it.id })
         val prevTotal = prev.sumOf { activeMs(it, prevPauses[it.id] ?: emptyList(), now) }
+
+        // średnie dzienne liczone z pełnych dni (bez dzisiejszego)
+        val fullIdx = days.indices.filter { days[it] in full }
+        val fullMinutes = fullIdx.sumOf { dailyMin[it].toDouble() }
+        val avgPerDayMs = if (fullIdx.isNotEmpty()) (fullMinutes / fullIdx.size * 60_000).toLong() else 0L
+        val fullCount = sessions.count { Dates.zdt(it.start).toLocalDate() in full }
+        val trendTotal = if (prevDays.isEmpty()) null
+        else trend(avgPerDayMs.toDouble(), prevTotal.toDouble() / prevDays.size)
+        val trendCount = if (prevDays.isEmpty()) null
+        else trend(fullCount.toDouble() / maxOf(1, fullIdx.size), prev.size.toDouble() / prevDays.size)
+
+        val wdN = weekdayCounts(days.filter { it in full })
+        for (i in 0 until 7) {
+            if (wdN[i] > 0) {
+                wdCount[i] /= wdN[i]
+                wdMin[i] /= wdN[i]
+            } else {
+                wdCount[i] = 0f
+                wdMin[i] = 0f
+            }
+        }
 
         val allDays = Repo.allSessions(t.id).map { Dates.zdt(it.start).toLocalDate() }.toSet()
         val (sc, sb) = streaks(allDays, LocalDate.now())
@@ -363,6 +438,13 @@ object Stats {
 
         return TrackerStats(
             days = days,
+            fullDays = full.size,
+            since = since,
+            trimmed = days.size < requested.size,
+            trendTotal = trendTotal,
+            trendCount = trendCount,
+            avgPerDayMs = avgPerDayMs,
+            countPerDay = if (fullIdx.isNotEmpty()) fullCount.toFloat() / fullIdx.size else 0f,
             sessions = sessions,
             pauses = pauses,
             activeBySession = activeBy,
@@ -407,6 +489,19 @@ object Stats {
             pct < 0 -> "−${-pct}%"
             else -> "bez zmian"
         }
+    }
+
+    /** Opis, z jakich dni liczone są średnie. */
+    fun basisNote(fullDays: Int, since: LocalDate?, trimmed: Boolean, trendShown: Boolean): String {
+        val today = LocalDate.now()
+        val sb = StringBuilder()
+        sb.append("Średnie z $fullDays ")
+        sb.append(if (fullDays == 1) "dnia" else "dni")
+        if (since != null && since != today) sb.append(" (bez dzisiejszego, który jeszcze trwa)")
+        sb.append('.')
+        if (trimmed && since != null) sb.append(" Dane od ${Dates.date(since)}, wcześniejsze dni okresu pominięte.")
+        if (trendShown) sb.append(" W nawiasie zmiana średniej względem poprzedniego okresu tej samej długości.")
+        return sb.toString()
     }
 
     fun minutesLabel(m: Float): String = if (m >= 90f) Num.fmt(m / 60f) + " h" else "${m.roundToInt()} min"

@@ -500,9 +500,10 @@ fun ReportsScreen(v: Long) {
 @Composable
 fun CounterReport(c: Counter, days: List<LocalDate>, v: Long, onOpen: () -> Unit) {
     val st = remember(v, days, c.id) { Stats.counter(c, days) }
-    val n = days.size
+    val dd = st.days
+    val n = dd.size
     val col = Palette.color(c.color)
-    val tr = Stats.trend(st.sum.toDouble(), st.prevSum.toDouble())
+    val tr = st.trend
     var peak = -1
     for (i in 0 until 24) if (st.hours[i] > 0f && (peak < 0 || st.hours[i] > st.hours[peak])) peak = i
 
@@ -515,17 +516,18 @@ fun CounterReport(c: Counter, days: List<LocalDate>, v: Long, onOpen: () -> Unit
         }
         StatsGrid(
             listOf(
-                Num.fmt(st.sum) to ("suma" + if (tr != null) " ($tr)" else ""),
-                Num.fmt(st.avgPerDay) to "średnio / dzień",
+                Num.fmt(st.sum) to "suma w okresie",
+                Num.fmt(st.avgPerDay) to ("średnio / dzień" + if (tr != null) " ($tr)" else ""),
                 (if (st.bestIdx >= 0) Num.fmt(st.values[st.bestIdx]) else "–") to
-                    (if (st.bestIdx >= 0) "rekord, ${Dates.day(days[st.bestIdx])}" else "rekord"),
+                    (if (st.bestIdx >= 0) "rekord, ${Dates.day(dd[st.bestIdx])}" else "rekord"),
                 (if (st.goalDays != null) "${st.goalDays}/$n" else "${st.activeDays}/$n") to
                     (if (st.goalDays != null) "dni z celem" else "dni z wpisem"),
                 (if (peak >= 0) "$peak:00" else "–") to "najczęstsza godzina",
                 "${st.streakCurrent} d" to "obecna seria",
             )
         )
-        BarChart(days, st.values, col) { Num.fmt(it) }
+        BarChart(dd, st.values, col) { Num.fmt(it) }
+        SinceNote(st.since, st.trimmed)
         TextButton(onClick = onOpen, contentPadding = PaddingValues(horizontal = 0.dp)) { Text("Pełne statystyki →") }
     }
 }
@@ -534,7 +536,7 @@ fun CounterReport(c: Counter, days: List<LocalDate>, v: Long, onOpen: () -> Unit
 fun TrackerReport(t: Tracker, days: List<LocalDate>, v: Long, onOpen: () -> Unit) {
     val st = remember(v, days, t.id) { Stats.tracker(t, days) }
     val col = Palette.color(t.color)
-    val trT = Stats.trend(st.totalMs.toDouble(), st.prevTotalMs.toDouble())
+    val trT = st.trendTotal
 
     AppCard {
         Eyebrow("Zdarzenie")
@@ -546,14 +548,26 @@ fun TrackerReport(t: Tracker, days: List<LocalDate>, v: Long, onOpen: () -> Unit
         StatsGrid(
             listOf(
                 "${st.count}" to "razy",
-                (if (st.totalMs > 0) Dates.dur(st.totalMs) else "–") to ("łącznie" + if (trT != null) " ($trT)" else ""),
-                (if (st.count > 0) Dates.dur(st.avgMs) else "–") to "średnio",
-                (if (st.count > 0) Dates.dur(st.longestMs) else "–") to "najdłużej",
+                (if (st.totalMs > 0) Dates.dur(st.totalMs) else "–") to "łącznie w okresie",
+                Dates.dur(st.avgPerDayMs) to ("czasu dziennie" + if (trT != null) " ($trT)" else ""),
+                (if (st.count > 0) Dates.dur(st.avgMs) else "–") to "średnio jedno",
                 Stats.hhmm(st.avgStartMin) to "średni start",
                 "${st.streakCurrent} d" to "obecna seria",
             )
         )
-        BarChart(days, st.dailyMinutes, col) { Stats.minutesLabel(it) }
+        BarChart(st.days, st.dailyMinutes, col) { Stats.minutesLabel(it) }
+        SinceNote(st.since, st.trimmed)
         TextButton(onClick = onOpen, contentPadding = PaddingValues(horizontal = 0.dp)) { Text("Pełne statystyki →") }
+    }
+}
+
+@Composable
+fun SinceNote(since: LocalDate?, trimmed: Boolean) {
+    if (trimmed && since != null) {
+        Text(
+            "Dane od ${Dates.date(since)} — średnie liczone od tego dnia.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }

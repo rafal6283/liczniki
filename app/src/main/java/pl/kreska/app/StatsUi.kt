@@ -201,25 +201,26 @@ fun CounterDetail(
 ) {
     val st = remember(v, days, c.id) { Stats.counter(c, days) }
     val col = Palette.color(c.color)
-    val n = days.size
+    val dd = st.days
+    val n = dd.size
     val f: (Float) -> String = { Num.fmt(it) }
 
     LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { DetailHeader("Licznik", c.name, col, range, onRange, onBack) }
 
         item {
-            StatSection("Podsumowanie", "Porównanie z poprzednimi $n dniami w nawiasie.") {
-                val tr = Stats.trend(st.sum.toDouble(), st.prevSum.toDouble())
+            StatSection("Podsumowanie", Stats.basisNote(st.fullDays, st.since, st.trimmed, st.trend != null)) {
+                val tr = st.trend
                 StatsGrid(
                     listOf(
-                        Num.fmt(st.sum) to ("suma" + if (tr != null) " ($tr)" else ""),
-                        Num.fmt(st.avgPerDay) to "średnio / dzień",
+                        Num.fmt(st.sum) to "suma w okresie",
+                        Num.fmt(st.avgPerDay) to ("średnio / dzień" + if (tr != null) " ($tr)" else ""),
                         Num.fmt(st.avgActiveDay) to "średnio w dniu z wpisem",
                         Num.fmt(st.median) to "mediana dnia z wpisem",
                         (if (st.bestIdx >= 0) Num.fmt(st.values[st.bestIdx]) else "–") to
-                            (if (st.bestIdx >= 0) "rekord, ${Dates.day(days[st.bestIdx])}" else "rekord"),
+                            (if (st.bestIdx >= 0) "rekord, ${Dates.day(dd[st.bestIdx])}" else "rekord"),
                         (if (st.worstActiveIdx >= 0) Num.fmt(st.values[st.worstActiveIdx]) else "–") to
-                            (if (st.worstActiveIdx >= 0) "najmniej, ${Dates.day(days[st.worstActiveIdx])}" else "najmniej"),
+                            (if (st.worstActiveIdx >= 0) "najmniej, ${Dates.day(dd[st.worstActiveIdx])}" else "najmniej"),
                         "${st.activeDays}/$n" to "dni z wpisem",
                         Num.fmt(st.clicks) to "kliknięć +",
                     ) + (if (st.goalDays != null) listOf("${st.goalDays}/$n" to "dni z osiągniętym celem") else emptyList())
@@ -240,7 +241,7 @@ fun CounterDetail(
 
         item {
             StatSection("Dzień po dniu") {
-                BarChart(days, st.values, col, f)
+                BarChart(dd, st.values, col, f)
                 if (n >= 28 && st.weeks.size >= 2) {
                     Spacer(Modifier.height(14.dp))
                     Eyebrow("Tydzień po tygodniu (od poniedziałku)")
@@ -271,7 +272,7 @@ fun CounterDetail(
         item {
             var best = -1
             for (i in 0 until 7) if (st.weekdayAvg[i] > 0f && (best < 0 || st.weekdayAvg[i] > st.weekdayAvg[best])) best = i
-            StatSection("Dni tygodnia", if (best >= 0) "Średnio najwięcej: ${WEEKDAYS_LONG[best]}" else "Średni wynik dnia") {
+            StatSection("Dni tygodnia", if (best >= 0) "Średni wynik w danym dniu tygodnia. Najwięcej: ${WEEKDAYS_LONG[best]}." else "Średni wynik w danym dniu tygodnia.") {
                 LabeledBars(WEEKDAYS, st.weekdayAvg.toList(), col, f, showValues = true)
             }
         }
@@ -285,13 +286,13 @@ fun CounterDetail(
         item {
             StatSection("Historia dni") {
                 TextButton(onClick = onSetDay, contentPadding = PaddingValues(horizontal = 0.dp)) { Text("Ustaw wartość wybranego dnia") }
-                val rows = days.indices.filter { st.values[it] != 0f }.reversed()
+                val rows = dd.indices.filter { st.values[it] != 0f }.reversed()
                 if (rows.isEmpty()) {
                     Text("Brak wpisów w tym okresie.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 rows.take(120).forEach { i ->
                     Row(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-                        Text(Dates.day(days[i]), modifier = Modifier.weight(1f))
+                        Text(Dates.day(dd[i]), modifier = Modifier.weight(1f))
                         val g = c.goal
                         if (g != null && st.values[i] >= g) {
                             Text("cel ✓  ", color = col, style = MaterialTheme.typography.bodySmall)
@@ -320,7 +321,8 @@ fun TrackerDetail(
 ) {
     val st = remember(v, days, t.id) { Stats.tracker(t, days) }
     val col = Palette.color(t.color)
-    val n = days.size
+    val dd = st.days
+    val n = dd.size
     val now = System.currentTimeMillis()
     val fm: (Float) -> String = { Stats.minutesLabel(it) }
     val fc: (Float) -> String = { Num.fmt(it) }
@@ -329,18 +331,19 @@ fun TrackerDetail(
         item { DetailHeader("Zdarzenie", t.name, col, range, onRange, onBack) }
 
         item {
-            StatSection("Podsumowanie", "Czasy bez pauz. Porównanie z poprzednimi $n dniami w nawiasie.") {
-                val trC = Stats.trend(st.count.toDouble(), st.prevCount.toDouble())
-                val trT = Stats.trend(st.totalMs.toDouble(), st.prevTotalMs.toDouble())
+            StatSection("Podsumowanie", "Czasy bez pauz. " + Stats.basisNote(st.fullDays, st.since, st.trimmed, st.trendTotal != null)) {
+                val trC = st.trendCount
+                val trT = st.trendTotal
                 StatsGrid(
                     listOf(
-                        "${st.count}" to ("razy" + if (trC != null) " ($trC)" else ""),
-                        (if (st.totalMs > 0) Dates.dur(st.totalMs) else "–") to ("łącznie" + if (trT != null) " ($trT)" else ""),
-                        (if (st.count > 0) Dates.dur(st.avgMs) else "–") to "średnio",
+                        "${st.count}" to "razy w okresie",
+                        (if (st.totalMs > 0) Dates.dur(st.totalMs) else "–") to "łącznie w okresie",
+                        Num.fmt(st.countPerDay) to ("razy dziennie" + if (trC != null) " ($trC)" else ""),
+                        Dates.dur(st.avgPerDayMs) to ("czasu dziennie" + if (trT != null) " ($trT)" else ""),
+                        (if (st.count > 0) Dates.dur(st.avgMs) else "–") to "średnio jedno",
                         (if (st.count > 0) Dates.dur(st.medianMs) else "–") to "mediana",
                         (if (st.count > 0) Dates.dur(st.shortestMs) else "–") to "najkrócej",
                         (if (st.count > 0) Dates.dur(st.longestMs) else "–") to "najdłużej",
-                        Dates.dur(st.totalMs / n) to "średnio dziennie",
                         "${st.activeDays}/$n" to "dni ze zdarzeniem",
                         "${st.pauseCount}" to "pauz",
                         (if (st.pausedMs > 0) Dates.dur(st.pausedMs) else "–") to "łącznie na pauzie",
@@ -360,7 +363,7 @@ fun TrackerDetail(
 
         item {
             StatSection("Czas dzień po dniu") {
-                BarChart(days, st.dailyMinutes, col, fm)
+                BarChart(dd, st.dailyMinutes, col, fm)
                 if (n >= 28 && st.weeks.size >= 2) {
                     Spacer(Modifier.height(14.dp))
                     Eyebrow("Tydzień po tygodniu (od poniedziałku)")
@@ -390,10 +393,10 @@ fun TrackerDetail(
         }
 
         item {
-            StatSection("Dni tygodnia", "Łączny czas oraz liczba zdarzeń w każdym dniu tygodnia.") {
+            StatSection("Dni tygodnia", "Średni czas i średnia liczba zdarzeń w danym dniu tygodnia.") {
                 LabeledBars(WEEKDAYS, st.weekdayMinutes.toList(), col, fm, showValues = true)
                 Spacer(Modifier.height(8.dp))
-                Eyebrow("Liczba zdarzeń")
+                Eyebrow("Średnia liczba zdarzeń")
                 LabeledBars(WEEKDAYS, st.weekdayCount.toList(), col, fc, showValues = true, chartHeight = 100.dp)
             }
         }
