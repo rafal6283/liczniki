@@ -139,6 +139,7 @@ fun CountersScreen(v: Long) {
     val counters = remember(v) { Repo.counters() }
     var editing by remember { mutableStateOf<Counter?>(null) }
     var creating by remember { mutableStateOf(false) }
+    var entriesFor by remember { mutableStateOf<Counter?>(null) }
 
     LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { SectionTitle("Dziś", Dates.longDay(LocalDate.now())) }
@@ -157,7 +158,7 @@ fun CountersScreen(v: Long) {
                 }
             }
         }
-        items(counters, key = { it.id }) { c -> CounterCard(c, v) { editing = c } }
+        items(counters, key = { it.id }) { c -> CounterCard(c, v, onEdit = { editing = c }, onEntries = { entriesFor = c }) }
         if (counters.isNotEmpty()) {
             item {
                 OutlinedButton(onClick = { creating = true }, modifier = Modifier.fillMaxWidth()) { Text("+ Nowy licznik") }
@@ -167,10 +168,11 @@ fun CountersScreen(v: Long) {
 
     if (creating) CounterDialog(null, Palette.nextFree(counters.map { it.color })) { creating = false }
     editing?.let { c -> CounterDialog(c, c.color) { editing = null } }
+    entriesFor?.let { c -> EntriesDialog(c, LocalDate.now()) { entriesFor = null } }
 }
 
 @Composable
-fun CounterCard(c: Counter, v: Long, onEdit: () -> Unit) {
+fun CounterCard(c: Counter, v: Long, onEdit: () -> Unit, onEntries: () -> Unit) {
     val total = remember(v, c.id) { Repo.todayTotal(c.id) }
     val last = remember(v, c.id) { Repo.lastTap(c.id) }
     val col = Palette.color(c.color)
@@ -197,6 +199,10 @@ fun CounterCard(c: Counter, v: Long, onEdit: () -> Unit) {
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                TextButton(
+                    onClick = onEntries,
+                    contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp),
+                ) { Text("Wpisy · dodaj / edytuj", style = MaterialTheme.typography.labelMedium) }
             }
             OutlinedButton(
                 onClick = {
@@ -442,6 +448,7 @@ fun ReportsScreen(v: Long) {
     val trackers = remember(v) { Repo.trackers() }
     var dayValueFor by remember { mutableStateOf<Counter?>(null) }
     var sessionEdit by remember { mutableStateOf<SessionEdit?>(null) }
+    var entriesDay by remember { mutableStateOf<Pair<Counter, LocalDate>?>(null) }
 
     val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
         if (uri != null) {
@@ -460,7 +467,12 @@ fun ReportsScreen(v: Long) {
     when {
         dc != null -> {
             BackHandler { detailCounter = -1L }
-            CounterDetail(dc, days, range, { range = it }, v, onBack = { detailCounter = -1L }, onSetDay = { dayValueFor = dc })
+            CounterDetail(
+                dc, days, range, { range = it }, v,
+                onBack = { detailCounter = -1L },
+                onSetDay = { dayValueFor = dc },
+                onDay = { d -> entriesDay = dc to d },
+            )
         }
         dt != null -> {
             BackHandler { detailTracker = -1L }
@@ -495,6 +507,7 @@ fun ReportsScreen(v: Long) {
 
     dayValueFor?.let { c -> DayValueDialog(c) { dayValueFor = null } }
     sessionEdit?.let { e -> SessionDialog(e.session, e.trackerId) { sessionEdit = null } }
+    entriesDay?.let { (c, d) -> EntriesDialog(c, d) { entriesDay = null } }
 }
 
 @Composable

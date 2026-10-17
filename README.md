@@ -26,6 +26,14 @@ Każda zmiana w gałęzi `main` buduje nową wersję i publikuje ją w zakładce
 
 Alternatywnie: otwórz folder w Android Studio i naciśnij **Run**.
 
+## Wpisy licznika
+
+Na karcie licznika „Wpisy · dodaj / edytuj” otwiera listę wystąpień danego dnia
+(strzałki lub dotknięcie daty zmieniają dzień). Możesz dopisać wystąpienie z dowolną
+datą i godziną, zmienić godzinę lub ilość albo usunąć wpis. Ręcznie dopisane wpisy liczą
+się do statystyk godzinowych. Przycisk „−” usuwa ostatni dzisiejszy wpis.
+Z raportów: Pełne statystyki → Historia dni → dotknij dnia.
+
 ## Statystyki
 
 W zakładce Raporty każda pozycja ma „Pełne statystyki”: podsumowanie z porównaniem do

@@ -49,7 +49,7 @@ data class Pause(
 )
 
 /** Pojedyncza zmiana licznika. */
-data class Tap(val ts: Long, val amount: Int, val manual: Boolean)
+data class Tap(val ts: Long, val amount: Int, val manual: Boolean, val id: Long = 0L)
 
 /* ---------- daty i liczby ---------- */
 
@@ -281,14 +281,61 @@ object Repo {
         return after
     }
 
+    /**
+     * Cofa ostatnie dzisiejsze kliknięcie: usuwa wpis, żeby lista wpisów i statystyki godzinowe
+     * były czyste. Gdy ostatni wpis nie pasuje (np. ręczna korekta), dopisuje wpis ujemny.
+     */
     fun decrement(counterId: Long): Int {
         val c = counter(counterId) ?: return 0
         val before = todayTotal(counterId)
         if (before <= 0) return before
-        val amount = minOf(c.step, before)
-        insertTap(counterId, System.currentTimeMillis(), -amount, Dates.todayKey())
+        val last = db.rawQuery(
+            "SELECT id, amount FROM taps WHERE counter_id=? AND day=? ORDER BY ts DESC, id DESC LIMIT 1",
+            args(counterId, Dates.todayKey())
+        ).use { cur -> if (cur.moveToFirst()) cur.getLong(0) to cur.getInt(1) else null }
+        val amount: Int
+        if (last != null && last.second > 0 && last.second <= before) {
+            db.delete("taps", "id=?", args(last.first))
+            amount = last.second
+        } else {
+            amount = minOf(c.step, before)
+            insertTap(counterId, System.currentTimeMillis(), -amount, Dates.todayKey())
+        }
         changed()
         return before - amount
+    }
+
+    /* --- pojedyncze wpisy licznika (dodawanie i edycja ręczna) --- */
+
+    fun tapsForDay(counterId: Long, day: LocalDate): List<Tap> =
+        db.rawQuery(
+            "SELECT ts, amount, manual, id FROM taps WHERE counter_id=? AND day=? ORDER BY ts DESC, id DESC",
+            args(counterId, day)
+        ).use { c ->
+            val out = ArrayList<Tap>()
+            while (c.moveToNext()) out.add(Tap(c.getLong(0), c.getInt(1), c.getInt(2) == 1, c.getLong(3)))
+            out
+        }
+
+    /** Dopisuje wystąpienie o podanej godzinie (liczy się też do statystyk godzinowych). */
+    fun addTap(counterId: Long, ts: Long, amount: Int) {
+        insertTap(counterId, ts, amount, Dates.keyOf(ts))
+        changed()
+    }
+
+    fun updateTap(id: Long, ts: Long, amount: Int) {
+        db.update("taps", ContentValues().apply {
+            put("ts", ts)
+            put("amount", amount)
+            put("day", Dates.keyOf(ts))
+            put("manual", 0)
+        }, "id=?", args(id))
+        changed()
+    }
+
+    fun deleteTap(id: Long) {
+        db.delete("taps", "id=?", args(id))
+        changed()
     }
 
     /** Ustawia wynik wybranego dnia (np. gdy zapomnisz coś policzyć). */
@@ -313,11 +360,11 @@ object Repo {
 
     fun taps(counterId: Long, from: LocalDate, to: LocalDate): List<Tap> =
         db.rawQuery(
-            "SELECT ts, amount, manual FROM taps WHERE counter_id=? AND day BETWEEN ? AND ? ORDER BY ts",
+            "SELECT ts, amount, manual, id FROM taps WHERE counter_id=? AND day BETWEEN ? AND ? ORDER BY ts",
             args(counterId, from, to)
         ).use { c ->
             val out = ArrayList<Tap>()
-            while (c.moveToNext()) out.add(Tap(c.getLong(0), c.getInt(1), c.getInt(2) == 1))
+            while (c.moveToNext()) out.add(Tap(c.getLong(0), c.getInt(1), c.getInt(2) == 1, c.getLong(3)))
             out
         }
 

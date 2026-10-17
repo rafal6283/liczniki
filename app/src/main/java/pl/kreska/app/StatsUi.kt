@@ -1,6 +1,7 @@
 package pl.kreska.app
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -198,6 +199,7 @@ fun CounterDetail(
     v: Long,
     onBack: () -> Unit,
     onSetDay: () -> Unit,
+    onDay: (LocalDate) -> Unit,
 ) {
     val st = remember(v, days, c.id) { Stats.counter(c, days) }
     val col = Palette.color(c.color)
@@ -284,14 +286,18 @@ fun CounterDetail(
         }
 
         item {
-            StatSection("Historia dni") {
-                TextButton(onClick = onSetDay, contentPadding = PaddingValues(horizontal = 0.dp)) { Text("Ustaw wartość wybranego dnia") }
+            StatSection("Historia dni", "Dotknij dnia, aby zobaczyć, dodać lub poprawić jego wpisy.") {
+                Row {
+                    TextButton(onClick = { onDay(LocalDate.now()) }, contentPadding = PaddingValues(horizontal = 0.dp)) { Text("Dodaj wpis") }
+                    Spacer(Modifier.width(16.dp))
+                    TextButton(onClick = onSetDay, contentPadding = PaddingValues(horizontal = 0.dp)) { Text("Ustaw wartość dnia") }
+                }
                 val rows = dd.indices.filter { st.values[it] != 0f }.reversed()
                 if (rows.isEmpty()) {
                     Text("Brak wpisów w tym okresie.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 rows.take(120).forEach { i ->
-                    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                    Row(Modifier.fillMaxWidth().clickable { onDay(dd[i]) }.padding(vertical = 8.dp)) {
                         Text(Dates.day(dd[i]), modifier = Modifier.weight(1f))
                         val g = c.goal
                         if (g != null && st.values[i] >= g) {
