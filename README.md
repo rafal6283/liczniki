@@ -1,4 +1,4 @@
-# Kreska — aplikacja na Androida
+# Kreska — Android i iOS
 
 Liczniki powtórzeń, zdarzenia ze startem i końcem, raporty z wykresami.
 Działa offline, dane są tylko na telefonie (SQLite). Android 8.0 lub nowszy.
@@ -58,3 +58,51 @@ pauza, zatrzymaj teraz albo zakończ o wybranej godzinie.
 - Przypomnienia korzystają z alarmów bez specjalnych uprawnień, więc w trybie
   oszczędzania baterii mogą przyjść kilka minut później.
 - Eksport CSV (zakładka Raporty) używa średnika i otwiera się poprawnie w polskim Excelu.
+
+
+# Wersja na iPhone'a (iOS 17 lub nowszy)
+
+Kod jest w folderze `ios/` (SwiftUI). Każda zmiana w tym folderze buduje plik
+**Kreska.ipa** i publikuje go w **Releases** jako `ios-v1.0.N`.
+
+## Co działa inaczej niż na Androidzie
+
+- Zamiast stałego powiadomienia z + i − są **widżety** (ekran główny i ekran blokady):
+  - **Licznik** – jeden wybrany licznik z + i − (przytrzymaj widżet → „Edytuj widżet”, aby wybrać licznik),
+  - **Liczniki** – kilka liczników naraz,
+  - **Zdarzenia** – Start, Pauza/Wznów, Stop.
+- Trwające zdarzenie to **Live Activity**: stoper na ekranie blokady i w Dynamic Island
+  z przyciskami Pauza i Stop.
+- Przypomnienia o celach i o niezatrzymanym zdarzeniu działają jak na Androidzie.
+- Dane są tylko na iPhonie i nie łączą się z wersją na Androida.
+
+## Instalacja z darmowym Apple ID (Sideloadly)
+
+Potrzebny jest komputer (Windows lub Mac) i kabel do iPhone'a.
+
+1. **Windows:** zainstaluj iTunes i iCloud w wersji ze strony Apple (nie ze Sklepu Microsoft).
+   **Mac:** nic nie trzeba.
+2. Pobierz i zainstaluj **Sideloadly** ze strony sideloadly.io.
+3. Pobierz **Kreska.ipa** z najnowszego wydania `ios-v…` w zakładce Releases.
+4. Podłącz iPhone'a kablem i na telefonie potwierdź „Ufaj temu komputerowi”.
+5. W Sideloadly przeciągnij plik IPA, wpisz swoje Apple ID i naciśnij **Start**
+   (poda kod z weryfikacji dwuetapowej, jeśli trzeba).
+6. Na iPhonie: **Ustawienia → Prywatność i ochrona → Tryb dewelopera → włącz** (telefon się
+   uruchomi ponownie).
+7. Na iPhonie: **Ustawienia → Ogólne → VPN i zarządzanie urządzeniem →** Twoje Apple ID → **Ufaj**.
+
+### Co 7 dni
+
+Aplikacja podpisana darmowym Apple ID działa 7 dni. Potem zainstaluj ją ponownie tak samo
+(lub włącz w Sideloadly automatyczne odświeżanie przez Wi-Fi). **Nie usuwaj aplikacji
+z telefonu** — przy ponownej instalacji dane zostają.
+
+Ograniczenia darmowego konta: najwyżej 3 takie aplikacje naraz i 10 identyfikatorów na
+tydzień (Kreska zużywa 2: aplikacja + widżety).
+
+### Gdy widżety nie widzą danych
+
+W aplikacji: Ustawienia (zębatka) → „Dane wspólne z widżetami”. Jeśli jest „nie”,
+narzędzie instalacyjne nie przekazało aplikacji wspólnego folderu z widżetami. Aplikacja
+działa wtedy normalnie, ale widżety są puste. Pomaga zwykle instalacja nowszą wersją
+Sideloadly albo przez AltStore.

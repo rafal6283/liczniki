@@ -3,7 +3,7 @@ name: Zbuduj APK
 on:
   push:
     branches: [main]
-    paths-ignore: ['ios/**', '.github/workflows/ios.yml']
+    paths-ignore: ['ios/**', '.github/workflows/ios.yml', '**.md']
   workflow_dispatch:
 
 permissions:
