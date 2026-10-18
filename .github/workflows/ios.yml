@@ -1,0 +1,62 @@
+name: Zbuduj iOS
+
+on:
+  push:
+    branches: [main]
+    paths: ['ios/**', '.github/workflows/ios.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Xcode
+        run: |
+          ls -d /Applications/Xcode_16*.app || true
+          xcodebuild -version
+      - name: XcodeGen
+        run: brew install xcodegen
+      - name: Projekt
+        working-directory: ios
+        run: xcodegen generate
+      - name: Build
+        working-directory: ios
+        run: |
+          xcodebuild -project Kreska.xcodeproj -target Kreska -configuration Release -sdk iphoneos \
+            SYMROOT="$PWD/build" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            MARKETING_VERSION=1.0.${{ github.run_number }} CURRENT_PROJECT_VERSION=${{ github.run_number }} \
+            build > build.log 2>&1 || { grep -E "error:|fatal" build.log | sort -u | head -80; exit 1; }
+          tail -3 build.log
+      - name: Zgłoś błędy kompilacji
+        if: failure()
+        working-directory: ios
+        run: |
+          grep -E "error:" build.log | sed -E 's#^.*/ios/##' | sort -u | head -60 | while IFS= read -r line; do
+            echo "::error::${line}"
+          done
+      - name: Paczka IPA
+        working-directory: ios
+        run: |
+          APP=build/Release-iphoneos/Kreska.app
+          ls "$APP" "$APP/PlugIns"
+          # podpis ad-hoc z uprawnieniami (Sideloadly/AltStore podpiszą ponownie Twoim Apple ID)
+          codesign -f -s - --entitlements Support/Widgets.entitlements "$APP/PlugIns/KreskaWidgets.appex"
+          codesign -f -s - --entitlements Support/Kreska.entitlements "$APP"
+          mkdir -p Payload
+          cp -R "$APP" Payload/
+          zip -qry Kreska.ipa Payload
+          ls -lh Kreska.ipa
+      - name: Opublikuj w Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ios-v1.0.${{ github.run_number }}
+          name: Kreska iOS 1.0.${{ github.run_number }}
+          body: "Plik **Kreska.ipa** zainstaluj przez Sideloadly (darmowe Apple ID). Instrukcja w README."
+          files: ios/Kreska.ipa
+          make_latest: false
