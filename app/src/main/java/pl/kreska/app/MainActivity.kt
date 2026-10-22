@@ -2,6 +2,8 @@ package pl.kreska.app
 
 import android.Manifest
 import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -40,6 +42,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.core.content.ContextCompat
+import androidx.core.content.IntentCompat
 
 class MainActivity : ComponentActivity() {
     companion object {
@@ -55,6 +58,7 @@ class MainActivity : ComponentActivity() {
         Repo.init(this)
         if (savedInstanceState == null) {
             tab.intValue = intent.getIntExtra(EXTRA_TAB, 0)
+            handleImport(intent)
             // Powrót po zamknięciu aplikacji lub restarcie telefonu, gdy coś wciąż trwa.
             if (Prefs.consumeResumeNeeded(this, Repo.running().isNotEmpty())) {
                 showResume.value = true
@@ -74,6 +78,21 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         if (intent.hasExtra(EXTRA_TAB)) tab.intValue = intent.getIntExtra(EXTRA_TAB, tab.intValue)
+        handleImport(intent)
+    }
+
+    /** Plik udostępniony z Nocnego licznika lub Polar EKG („Udostępnij → Kreska”). */
+    private fun handleImport(i: Intent) {
+        val uri: Uri? = when (i.action) {
+            Intent.ACTION_SEND -> IntentCompat.getParcelableExtra(i, Intent.EXTRA_STREAM, Uri::class.java)
+            Intent.ACTION_VIEW -> i.data
+            else -> null
+        }
+        if (uri == null) return
+        Toast.makeText(this, Exchange.importUri(this, uri), Toast.LENGTH_LONG).show()
+        tab.intValue = 2
+        // Ten sam intent nie zaimportuje się drugi raz (np. po obrocie ekranu).
+        i.action = null
     }
 
     override fun onStop() {

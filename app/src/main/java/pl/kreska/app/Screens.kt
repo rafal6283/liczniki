@@ -449,6 +449,13 @@ fun ReportsScreen(v: Long) {
     var dayValueFor by remember { mutableStateOf<Counter?>(null) }
     var sessionEdit by remember { mutableStateOf<SessionEdit?>(null) }
     var entriesDay by remember { mutableStateOf<Pair<Counter, LocalDate>?>(null) }
+    var detailCompare by rememberSaveable { mutableStateOf(false) }
+    var compareSettings by remember { mutableStateOf(false) }
+    var compareCfg by remember { mutableIntStateOf(0) }
+
+    val importFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) Toast.makeText(ctx, Exchange.importUri(ctx, uri), Toast.LENGTH_LONG).show()
+    }
 
     val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
         if (uri != null) {
@@ -465,6 +472,10 @@ fun ReportsScreen(v: Long) {
     val dt = if (detailTracker >= 0) trackers.firstOrNull { it.id == detailTracker } else null
 
     when {
+        detailCompare -> {
+            BackHandler { detailCompare = false }
+            CompareDetail(v, days, range, { range = it }, compareCfg, onBack = { detailCompare = false })
+        }
         dc != null -> {
             BackHandler { detailCounter = -1L }
             CounterDetail(
@@ -495,6 +506,14 @@ fun ReportsScreen(v: Long) {
             }
             items(counters, key = { "c${it.id}" }) { c -> CounterReport(c, days, v) { detailCounter = c.id } }
             items(trackers, key = { "t${it.id}" }) { t -> TrackerReport(t, days, v) { detailTracker = t.id } }
+            item(key = "compare") {
+                CompareCard(
+                    v, from, to, compareCfg,
+                    onImport = { importFile.launch(arrayOf("*/*")) },
+                    onSettings = { compareSettings = true },
+                    onOpen = { detailCompare = true },
+                )
+            }
             if (counters.isNotEmpty() || trackers.isNotEmpty()) {
                 item {
                     OutlinedButton(onClick = { export.launch("kreska-$to.csv") }, modifier = Modifier.fillMaxWidth()) {
@@ -508,6 +527,7 @@ fun ReportsScreen(v: Long) {
     dayValueFor?.let { c -> DayValueDialog(c) { dayValueFor = null } }
     sessionEdit?.let { e -> SessionDialog(e.session, e.trackerId) { sessionEdit = null } }
     entriesDay?.let { (c, d) -> EntriesDialog(c, d) { entriesDay = null } }
+    if (compareSettings) CompareSettingsDialog(onDismiss = { compareSettings = false }, onSaved = { compareCfg++ })
 }
 
 @Composable

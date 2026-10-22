@@ -140,7 +140,7 @@ object Prefs {
 
 /* ---------- baza ---------- */
 
-private class Db(ctx: Context) : SQLiteOpenHelper(ctx, "kreska.db", null, 2) {
+private class Db(ctx: Context) : SQLiteOpenHelper(ctx, "kreska.db", null, 3) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
             "CREATE TABLE counters(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, " +
@@ -163,6 +163,21 @@ private class Db(ctx: Context) : SQLiteOpenHelper(ctx, "kreska.db", null, 2) {
         )
         db.execSQL("CREATE INDEX sess_ts ON sessions(tracker_id, start)")
         createPauses(db)
+        createExternal(db)
+    }
+
+    /** Dane zaimportowane z innych aplikacji (Nocny licznik, Polar EKG). */
+    private fun createExternal(db: SQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE ext_sources(source TEXT PRIMARY KEY, exported_at INTEGER NOT NULL, " +
+                "imported_at INTEGER NOT NULL, events INTEGER NOT NULL)"
+        )
+        db.execSQL("CREATE TABLE ext_windows(source TEXT NOT NULL, start INTEGER NOT NULL, end_ts INTEGER NOT NULL)")
+        db.execSQL(
+            "CREATE TABLE ext_events(source TEXT NOT NULL, type TEXT NOT NULL, start INTEGER NOT NULL, " +
+                "end_ts INTEGER, confidence REAL, verified INTEGER)"
+        )
+        db.execSQL("CREATE INDEX ext_ev ON ext_events(source, type, start)")
     }
 
     private fun createPauses(db: SQLiteDatabase) {
@@ -175,6 +190,7 @@ private class Db(ctx: Context) : SQLiteOpenHelper(ctx, "kreska.db", null, 2) {
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         if (oldVersion < 2) createPauses(db)
+        if (oldVersion < 3) createExternal(db)
     }
 }
 
@@ -619,6 +635,83 @@ object Repo {
         db.delete("sessions", "id=?", args(id))
         changed()
     }
+
+    /* --- dane z innych aplikacji --- */
+
+    /** Zastępuje wszystkie dane danego źródła (plik eksportu zawiera całą historię). */
+    fun replaceExternal(x: ExtImport) {
+        val d = db
+        d.beginTransaction()
+        try {
+            d.delete("ext_windows", "source=?", args(x.source))
+            d.delete("ext_events", "source=?", args(x.source))
+            for (w in x.windows) {
+                d.insert("ext_windows", null, ContentValues().apply {
+                    put("source", x.source); put("start", w.start); put("end_ts", w.end)
+                })
+            }
+            for (e in x.events) {
+                d.insert("ext_events", null, ContentValues().apply {
+                    put("source", x.source)
+                    put("type", e.type)
+                    put("start", e.start)
+                    if (e.end == null) putNull("end_ts") else put("end_ts", e.end)
+                    if (e.confidence == null) putNull("confidence") else put("confidence", e.confidence)
+                    if (e.verified == null) putNull("verified") else put("verified", if (e.verified) 1 else 0)
+                })
+            }
+            d.insertWithOnConflict("ext_sources", null, ContentValues().apply {
+                put("source", x.source)
+                put("exported_at", x.exportedAt)
+                put("imported_at", System.currentTimeMillis())
+                put("events", x.events.size)
+            }, SQLiteDatabase.CONFLICT_REPLACE)
+            d.setTransactionSuccessful()
+        } finally {
+            d.endTransaction()
+        }
+        bump()
+    }
+
+    /** Źródło → (czas eksportu, liczba zdarzeń). */
+    fun extSources(): Map<String, Pair<Long, Int>> =
+        db.rawQuery("SELECT source, exported_at, events FROM ext_sources", null).use { c ->
+            val out = HashMap<String, Pair<Long, Int>>()
+            while (c.moveToNext()) out[c.getString(0)] = c.getLong(1) to c.getInt(2)
+            out
+        }
+
+    fun extWindows(source: String): List<Span> =
+        db.rawQuery("SELECT start, end_ts FROM ext_windows WHERE source=? ORDER BY start", args(source)).use { c ->
+            val out = ArrayList<Span>()
+            while (c.moveToNext()) out.add(Span(c.getLong(0), c.getLong(1)))
+            out
+        }
+
+    fun extEvents(source: String, type: String): List<ExtEvent> =
+        db.rawQuery(
+            "SELECT type, start, end_ts, confidence, verified FROM ext_events WHERE source=? AND type=? ORDER BY start",
+            args(source, type)
+        ).use { c ->
+            val out = ArrayList<ExtEvent>()
+            while (c.moveToNext()) {
+                out.add(
+                    ExtEvent(
+                        c.getString(0), c.getLong(1), c.longOrNull(2),
+                        if (c.isNull(3)) null else c.getDouble(3),
+                        c.intOrNull(4)?.let { it == 1 },
+                    )
+                )
+            }
+            out
+        }
+
+    /** Zdarzenia typu, które nachodzą na przedział [fromTs, toTs). */
+    fun sessionsOverlapping(trackerId: Long, fromTs: Long, toTs: Long): List<Session> =
+        sessionsQuery(
+            "WHERE tracker_id=? AND start<? AND (end_ts IS NULL OR end_ts>?) ORDER BY start",
+            args(trackerId, toTs, fromTs)
+        )
 
     /* --- eksport --- */
 
