@@ -28,6 +28,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -468,6 +469,27 @@ fun ReportsScreen(v: Long) {
         }
     }
 
+    // eksport wpisów jednego licznika z godzinami (JSON) – np. FF do Dziennika talerza
+    var jsonPick by remember { mutableStateOf(false) }
+    var jsonCounter by remember { mutableStateOf<Counter?>(null) }
+    val exportJson = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        val c = jsonCounter
+        if (uri != null && c != null) {
+            try {
+                val r = KreskaExport.build(c)
+                ctx.contentResolver.openOutputStream(uri)?.use { it.write(r.json.toByteArray(Charsets.UTF_8)) }
+                Toast.makeText(ctx, "Zapisano: ${r.events} wpisów z godziną, ${r.days} dni", Toast.LENGTH_LONG).show()
+            } catch (e: Exception) {
+                Toast.makeText(ctx, "Nie udało się zapisać pliku", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+    fun startJson(c: Counter) {
+        jsonCounter = c
+        val safe = c.name.trim().replace(Regex("[^A-Za-z0-9ĄĆĘŁŃÓŚŹŻąćęłńóśźż_-]+"), "-").ifEmpty { "licznik" }
+        exportJson.launch("kreska-$safe-$to.json")
+    }
+
     val dc = if (detailCounter >= 0) counters.firstOrNull { it.id == detailCounter } else null
     val dt = if (detailTracker >= 0) trackers.firstOrNull { it.id == detailTracker } else null
 
@@ -521,12 +543,50 @@ fun ReportsScreen(v: Long) {
                     }
                 }
             }
+            if (counters.isNotEmpty()) {
+                item {
+                    OutlinedButton(
+                        onClick = { if (counters.size == 1) startJson(counters.first()) else jsonPick = true },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Eksportuj wpisy z godzinami (JSON)")
+                    }
+                    Text(
+                        "Cała historia jednego licznika – każde kliknięcie z godziną. Np. FF do Dziennika talerza.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
+            }
         }
     }
 
     dayValueFor?.let { c -> DayValueDialog(c) { dayValueFor = null } }
     sessionEdit?.let { e -> SessionDialog(e.session, e.trackerId) { sessionEdit = null } }
     entriesDay?.let { (c, d) -> EntriesDialog(c, d) { entriesDay = null } }
+    if (jsonPick) {
+        val preferred = ComparePrefs.counterId(ctx, counters)
+        AlertDialog(
+            onDismissRequest = { jsonPick = false },
+            title = { Text("Który licznik?") },
+            text = {
+                Column {
+                    for (c in counters) {
+                        TextButton(onClick = { jsonPick = false; startJson(c) }, modifier = Modifier.fillMaxWidth()) {
+                            Text(
+                                c.name,
+                                fontWeight = if (c.id == preferred) FontWeight.Bold else FontWeight.Normal,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { jsonPick = false }) { Text("Anuluj") } },
+        )
+    }
     if (compareSettings) CompareSettingsDialog(onDismiss = { compareSettings = false }, onSaved = { compareCfg++ })
 }
 

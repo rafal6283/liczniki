@@ -146,3 +146,60 @@ object Compare {
         return AfMerge.compare(ecg, Repo.extWindows(SRC_ECG), active, r, starts)
     }
 }
+
+/* ---------- eksport wpisów licznika z godzinami ---------- */
+
+/*
+ * Ten sam format „wymiana-zdarzen” v1, źródło "kreska" – czyta go m.in. Dziennik talerza.
+ * {
+ *   "format": "wymiana-zdarzen", "version": 1, "source": "kreska", "exported_at": ms,
+ *   "counter": "FF",
+ *   "windows": [{"start": ms, "end": ms}],             // od pierwszego wpisu do teraz
+ *   "events":  [{"id": "k12-0", "type": "tap", "start": ms}],    // każde kliknięcie z godziną
+ *   "day_totals": [{"date": "2026-10-20", "total": 7}]  // sumy dni (z ręcznymi korektami)
+ * }
+ * Kliknięcia „−” cofają ostatnie kliknięcie tego dnia. Korekty dnia (bez godziny) są tylko w day_totals.
+ */
+object KreskaExport {
+    data class Result(val json: String, val events: Int, val days: Int)
+
+    fun build(counter: Counter): Result {
+        val today = LocalDate.now()
+        val all = Repo.taps(counter.id, LocalDate.of(2000, 1, 1), today)
+        val totals = Repo.dailyTotals(counter.id, LocalDate.of(2000, 1, 1), today)
+        // zdarzenia z godziną: plusy bez korekt, minus usuwa ostatni plus z tego samego dnia
+        val byDay = LinkedHashMap<String, ArrayList<Pair<Long, String>>>()
+        for (t in all) {
+            if (t.manual) continue
+            val key = Dates.keyOf(t.ts)
+            val list = byDay.getOrPut(key) { ArrayList() }
+            if (t.amount > 0) {
+                repeat(t.amount) { i -> list.add(t.ts to "k${t.id}-$i") }
+            } else if (t.amount < 0) {
+                repeat(-t.amount) { if (list.isNotEmpty()) list.removeAt(list.size - 1) }
+            }
+        }
+        val events = org.json.JSONArray()
+        var n = 0
+        for ((_, list) in byDay) for ((ts, id) in list) {
+            events.put(JSONObject().put("id", id).put("type", "tap").put("start", ts))
+            n++
+        }
+        val dayArr = org.json.JSONArray()
+        for ((d, v) in totals.toSortedMap()) if (v != 0) dayArr.put(JSONObject().put("date", d).put("total", v))
+        val windows = org.json.JSONArray()
+        val first = all.firstOrNull()?.ts
+        val now = System.currentTimeMillis()
+        if (first != null) windows.put(JSONObject().put("start", Dates.startOf(Dates.zdt(first).toLocalDate())).put("end", now))
+        val j = JSONObject()
+            .put("format", "wymiana-zdarzen")
+            .put("version", 1)
+            .put("source", "kreska")
+            .put("exported_at", now)
+            .put("counter", counter.name)
+            .put("windows", windows)
+            .put("events", events)
+            .put("day_totals", dayArr)
+        return Result(j.toString(), n, dayArr.length())
+    }
+}

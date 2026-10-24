@@ -40,6 +40,16 @@ jobs:
           grep -E "error:" build.log | sed -E 's#^.*/ios/##' | sort -u | head -60 | while IFS= read -r line; do
             echo "::error::${line}"
           done
+      - name: Logi (gałąź ci-ios)
+        if: always()
+        run: |
+          mkdir -p /tmp/l && grep -E "error:|fatal|BUILD" ios/build.log | sort -u | head -200 > /tmp/l/errors.log || true
+          tail -60 ios/build.log > /tmp/l/tail.log || true
+          echo "run ${GITHUB_RUN_NUMBER} ${GITHUB_SHA} $(date -u +%FT%TZ)" > /tmp/l/run.txt
+          cd /tmp/l && git init -q && git checkout -q -b ci-ios
+          git config user.name "github-actions"; git config user.email "github-actions@users.noreply.github.com"
+          git add -A && git commit -qm "logi ${GITHUB_RUN_NUMBER}"
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" ci-ios || true
       - name: Paczka IPA
         working-directory: ios
         run: |

@@ -58,6 +58,7 @@ pauza, zatrzymaj teraz albo zakończ o wybranej godzinie.
 - Przypomnienia korzystają z alarmów bez specjalnych uprawnień, więc w trybie
   oszczędzania baterii mogą przyjść kilka minut później.
 - Eksport CSV (zakładka Raporty) używa średnika i otwiera się poprawnie w polskim Excelu.
+- Eksport wpisów z godzinami (zakładka Raporty → „Eksportuj wpisy z godzinami (JSON)”) zapisuje całą historię wybranego licznika w formacie „wymiana-zdarzen” v1 (źródło `kreska`): każde kliknięcie z godziną plus sumy dni. Ten plik wczytuje np. Dziennik talerza (licznik FF), żeby wiązać wiatry z posiłkami co do godziny.
 
 
 # Wersja na iPhone'a (iOS 17 lub nowszy)

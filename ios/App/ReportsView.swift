@@ -16,6 +16,58 @@ struct CSVExport: Transferable {
     }
 }
 
+/// Wpisy jednego licznika z godzinami – format „wymiana-zdarzen” v1, źródło "kreska" (czyta go m.in. Dziennik talerza).
+/// Kliknięcia „−” cofają ostatnie kliknięcie tego dnia; korekty dnia bez godziny są tylko w day_totals.
+enum KreskaExport {
+    static func build(_ c: Counter) -> (data: Data, events: Int, days: Int) {
+        let today = Fmt.todayKey
+        let all = Repo.taps(c.id, from: "2000-01-01", to: today)
+        let totals = Repo.dailyTotals(c.id, from: "2000-01-01", to: today)
+        var order: [String] = []
+        var byDay: [String: [(Int64, String)]] = [:]
+        for t in all where !t.manual {
+            let key = Fmt.key(ms: t.ts)
+            if byDay[key] == nil { byDay[key] = []; order.append(key) }
+            if t.amount > 0 {
+                for i in 0..<t.amount { byDay[key]!.append((t.ts, "k\(t.id)-\(i)")) }
+            } else if t.amount < 0 {
+                for _ in 0..<(-t.amount) where !byDay[key]!.isEmpty { byDay[key]!.removeLast() }
+            }
+        }
+        var events: [[String: Any]] = []
+        for key in order {
+            for (ts, id) in byDay[key] ?? [] { events.append(["id": id, "type": "tap", "start": ts]) }
+        }
+        let dayTotals: [[String: Any]] = totals.sorted { $0.key < $1.key }.filter { $0.value != 0 }.map { ["date": $0.key, "total": $0.value] }
+        var windows: [[String: Any]] = []
+        let now = nowMs()
+        if let first = all.first?.ts {
+            windows.append(["start": Fmt.cal.startOfDay(for: first.date).ms, "end": now])
+        }
+        let obj: [String: Any] = [
+            "format": "wymiana-zdarzen", "version": 1, "source": "kreska", "exported_at": now,
+            "counter": c.name, "windows": windows, "events": events, "day_totals": dayTotals,
+        ]
+        let data = (try? JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys])) ?? Data("{}".utf8)
+        return (data, events.count, dayTotals.count)
+    }
+}
+
+/// Plik JSON tworzony dopiero w chwili udostępniania.
+struct CounterJSONExport: Transferable {
+    let counter: Counter
+
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(exportedContentType: .json) { item in
+            let safe = item.counter.name.components(separatedBy: CharacterSet.alphanumerics.inverted).filter { !$0.isEmpty }.joined(separator: "-")
+            let url = FileManager.default.temporaryDirectory
+                .appendingPathComponent("kreska-\(safe.isEmpty ? "licznik" : safe)-\(Fmt.todayKey).json")
+            try KreskaExport.build(item.counter).data.write(to: url, options: .atomic)
+            return SentTransferredFile(url)
+        }
+    }
+}
+
 struct ReportsView: View {
     @ObservedObject private var store = Store.shared
     @AppStorage("report_range") private var range = 30
@@ -41,6 +93,22 @@ struct ReportsView: View {
                                 .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.bordered)
+                    }
+                    if !counters.isEmpty {
+                        Menu {
+                            ForEach(counters) { c in
+                                ShareLink(item: CounterJSONExport(counter: c), preview: SharePreview("Kreska — \(c.name) (JSON)")) {
+                                    Text(c.name)
+                                }
+                            }
+                        } label: {
+                            Label("Eksportuj wpisy z godzinami (JSON)", systemImage: "clock.arrow.circlepath")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                        Text("Cała historia jednego licznika – każde kliknięcie z godziną. Np. FF do Dziennika talerza.")
+                            .font(.caption).foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
                 .padding(16)
