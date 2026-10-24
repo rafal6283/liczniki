@@ -205,6 +205,7 @@ private func peakText(_ values: [Double], _ format: (Double) -> String) -> Strin
 }
 
 private let hourLabels = (0..<24).map { "\($0)" }
+private let hourTips = (0..<24).map { "\($0):00–\($0):59" }
 
 private func weekLabels(_ w: [WeekPoint]) -> [String] {
     w.map { p in
@@ -265,12 +266,13 @@ struct CounterDetailView: View {
                     if n >= 28 && st.weeks.count >= 2 {
                         Eyebrow(text: "Tydzień po tygodniu (od poniedziałku)").padding(.top, 8)
                         CategoryBars(labels: weekLabels(st.weeks), values: st.weeks.map { $0.value }, color: col,
-                                     format: f, labelEvery: max(1, st.weeks.count / 6))
+                                     format: f, labelEvery: max(1, st.weeks.count / 6),
+                                     tipLabels: weekLabels(st.weeks).map { "tydzień od \($0)" })
                     }
                 }
 
                 SectionCard("Pora dnia", hint: peakText(st.hours, f) ?? "Brak kliknięć w tym okresie.") {
-                    CategoryBars(labels: hourLabels, values: st.hours, color: col, format: f, labelEvery: 3)
+                    CategoryBars(labels: hourLabels, values: st.hours, color: col, format: f, labelEvery: 3, tipLabels: hourTips)
                     ForEach(0..<4, id: \.self) { i in
                         InfoLine(label: Stats.partLabels[i], value: "\(Int(st.parts[i]))%")
                     }
@@ -286,7 +288,7 @@ struct CounterDetailView: View {
                 }
 
                 SectionCard("Dni tygodnia", hint: weekdayHint(st.weekdayAvg)) {
-                    CategoryBars(labels: Stats.weekdays, values: st.weekdayAvg, color: col, format: f, showValues: true)
+                    CategoryBars(labels: Stats.weekdays, values: st.weekdayAvg, color: col, format: f, showValues: true, tipLabels: Stats.weekdaysLong)
                 }
 
                 SectionCard("Mapa tygodnia", hint: "Dzień tygodnia × godzina. Ciemniejsze pole = więcej kliknięć.") {
@@ -385,16 +387,17 @@ struct TrackerDetailView: View {
                     if n >= 28 && st.weeks.count >= 2 {
                         Eyebrow(text: "Tydzień po tygodniu (od poniedziałku)").padding(.top, 8)
                         CategoryBars(labels: weekLabels(st.weeks), values: st.weeks.map { $0.value }, color: col,
-                                     format: fm, labelEvery: max(1, st.weeks.count / 6))
+                                     format: fm, labelEvery: max(1, st.weeks.count / 6),
+                                     tipLabels: weekLabels(st.weeks).map { "tydzień od \($0)" })
                     }
                 }
 
                 SectionCard("Kiedy się zaczyna", hint: "Średnio start o \(Stats.hhmm(st.avgStartMin)), koniec o \(Stats.hhmm(st.avgEndMin)).") {
-                    CategoryBars(labels: hourLabels, values: st.startHours, color: col, format: fc, labelEvery: 3)
+                    CategoryBars(labels: hourLabels, values: st.startHours, color: col, format: fc, labelEvery: 3, tipLabels: hourTips)
                 }
 
                 SectionCard("Kiedy trwa", hint: peakText(st.activeHours, fm) ?? "Brak zdarzeń w tym okresie.") {
-                    CategoryBars(labels: hourLabels, values: st.activeHours, color: col, format: fm, labelEvery: 3)
+                    CategoryBars(labels: hourLabels, values: st.activeHours, color: col, format: fm, labelEvery: 3, tipLabels: hourTips)
                     ForEach(0..<4, id: \.self) { i in
                         InfoLine(label: Stats.partLabels[i],
                                  value: partsSum > 0 ? "\(Int(parts[i] / partsSum * 100))% · \(fm(parts[i]))" : "–")
@@ -402,13 +405,13 @@ struct TrackerDetailView: View {
                 }
 
                 SectionCard("Dni tygodnia", hint: "Średni czas i średnia liczba zdarzeń w danym dniu tygodnia.") {
-                    CategoryBars(labels: Stats.weekdays, values: st.weekdayMinutes, color: col, format: fm, showValues: true)
+                    CategoryBars(labels: Stats.weekdays, values: st.weekdayMinutes, color: col, format: fm, showValues: true, tipLabels: Stats.weekdaysLong)
                     Eyebrow(text: "Średnia liczba zdarzeń").padding(.top, 6)
-                    CategoryBars(labels: Stats.weekdays, values: st.weekdayCount, color: col, format: fc, showValues: true, height: 100)
+                    CategoryBars(labels: Stats.weekdays, values: st.weekdayCount, color: col, format: fc, showValues: true, height: 100, tipLabels: Stats.weekdaysLong)
                 }
 
                 SectionCard("Mapa tygodnia", hint: "Dzień tygodnia × godzina. Ciemniejsze pole = więcej czasu.") {
-                    HeatMapView(heat: st.heat, color: col)
+                    HeatMapView(heat: st.heat, color: col, format: fm)
                 }
 
                 SectionCard("Długość zdarzeń", hint: "Ile zdarzeń trwało tyle czasu.") {
