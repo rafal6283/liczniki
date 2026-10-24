@@ -1,5 +1,8 @@
 package pl.kreska.app
 
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -22,6 +25,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -29,6 +33,9 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontFamily
@@ -40,11 +47,15 @@ import androidx.compose.ui.unit.sp
 import java.time.LocalDate
 
 val WEEKDAYS = listOf("pn", "wt", "śr", "cz", "pt", "sb", "nd")
+val HOUR_TIPS = (0 until 24).map { "$it:00–$it:59" }
 val WEEKDAYS_LONG = listOf("poniedziałek", "wtorek", "środa", "czwartek", "piątek", "sobota", "niedziela")
 
 /* ---------- wykresy ---------- */
 
-/** Słupki z etykietami pod spodem; opcjonalnie wartości nad słupkami. */
+/**
+ * Słupki z etykietami pod spodem; opcjonalnie wartości nad słupkami.
+ * Słupki wyrastają kaskadą, a dotknięcie / przeciągnięcie palcem pokazuje dymek z wartością.
+ */
 @Composable
 fun LabeledBars(
     labels: List<String>,
@@ -54,14 +65,23 @@ fun LabeledBars(
     labelEvery: Int = 1,
     showValues: Boolean = false,
     chartHeight: Dp = 140.dp,
+    tipLabels: List<String>? = null,
 ) {
     val measurer = rememberTextMeasurer()
     val labelStyle = TextStyle(fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant)
     val valueStyle = TextStyle(fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurface)
+    val tipStyle = TextStyle(fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.inverseOnSurface)
+    val tipBg = MaterialTheme.colorScheme.inverseSurface
     val grid = MaterialTheme.colorScheme.outlineVariant
     val maxV = values.maxOrNull() ?: 0f
     val peak = if (maxV > 0f) values.indexOf(maxV) else -1
-    Canvas(Modifier.fillMaxWidth().height(chartHeight)) {
+    val anim = animatedSeries(values)
+    val yMax by animateFloatAsState(if (maxV > 0f) maxV else 1f, spring(stiffness = Spring.StiffnessLow), label = "yMax")
+    val sel = rememberSelection(labels.firstOrNull() to values.size)
+    Canvas(
+        Modifier.fillMaxWidth().height(chartHeight)
+            .chartTouch(sel, values.size) { o, w -> if (values.isEmpty()) -1 else (o.x / (w / values.size)).toInt().coerceIn(0, values.size - 1) }
+    ) {
         val top = if (showValues) 16.dp.toPx() else 6.dp.toPx()
         val bottom = 18.dp.toPx()
         val h = size.height - top - bottom
@@ -69,21 +89,27 @@ fun LabeledBars(
         if (n == 0) return@Canvas
         val bw = size.width / n
         val gap = minOf(8.dp.toPx(), bw * 0.25f)
-        val yMax = if (maxV > 0f) maxV else 1f
         drawLine(grid, Offset(0f, top + h), Offset(size.width, top + h), strokeWidth = 1f)
-        values.forEachIndexed { i, v ->
+        val tipA = sel.alpha.value
+        for (i in 0 until n) {
+            val v = anim[i]
             val x = i * bw + gap / 2f
             if (v > 0f) {
-                val bh = maxOf(1.5f, h * v / yMax)
+                val bh = maxOf(1.5f, h * v / yMax).coerceAtMost(h)
                 drawRoundRect(
-                    color = if (i == peak) color else color.copy(alpha = 0.72f),
+                    color = color.copy(alpha = barAlpha(i, sel, if (i == peak) 1f else 0.72f)),
                     topLeft = Offset(x, top + h - bh),
                     size = Size(maxOf(0.6f, bw - gap), bh),
                     cornerRadius = CornerRadius(2.dp.toPx(), 2.dp.toPx()),
                 )
-                if (showValues) {
-                    val t = measurer.measure(format(v), valueStyle)
-                    drawText(t, topLeft = Offset((i * bw + bw / 2f - t.size.width / 2f).coerceIn(0f, size.width - t.size.width), top + h - bh - t.size.height - 1f))
+                if (showValues && values[i] > 0f) {
+                    val t = measurer.measure(format(values[i]), valueStyle)
+                    val a = if (i == sel.last) 1f - tipA else 1f
+                    drawText(
+                        t,
+                        topLeft = Offset((i * bw + bw / 2f - t.size.width / 2f).coerceIn(0f, size.width - t.size.width), top + h - bh - t.size.height - 1f),
+                        alpha = (anim.t * a).coerceIn(0f, 1f),
+                    )
                 }
             }
             if (i % labelEvery == 0) {
@@ -91,20 +117,42 @@ fun LabeledBars(
                 drawText(t, topLeft = Offset((i * bw + bw / 2f - t.size.width / 2f).coerceIn(0f, size.width - t.size.width), size.height - t.size.height))
             }
         }
+        val s = sel.last
+        if (s in 0 until n) {
+            val bh = if (anim[s] > 0f) maxOf(1.5f, h * anim[s] / yMax).coerceAtMost(h) else 0f
+            val name = tipLabels?.getOrNull(s) ?: labels[s]
+            tooltip(measurer, "$name · ${format(values[s])}", s * bw + bw / 2f, top + h - bh, tipStyle, tipBg, tipA, grid, top + h)
+        }
     }
 }
 
-/** Mapa cieplna: dni tygodnia × godziny. Im ciemniej, tym więcej. */
+/** Mapa cieplna: dni tygodnia × godziny. Im ciemniej, tym więcej. Pola rozjaśniają się falą; dotknięcie pola pokazuje wartość. */
 @Composable
-fun HeatMap(heat: Array<FloatArray>, color: Color) {
+fun HeatMap(heat: Array<FloatArray>, color: Color, format: (Float) -> String = { Num.fmt(it) }) {
     val measurer = rememberTextMeasurer()
     val labelStyle = TextStyle(fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    val tipStyle = TextStyle(fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.inverseOnSurface)
+    val tipBg = MaterialTheme.colorScheme.inverseSurface
+    val ring = MaterialTheme.colorScheme.onSurface
     val empty = MaterialTheme.colorScheme.surfaceVariant
     var maxV = 0f
     for (r in heat) for (v in r) if (v > maxV) maxV = v
-    Canvas(Modifier.fillMaxWidth().height(170.dp)) {
-        val left = 22.dp.toPx()
-        val top = 14.dp.toPx()
+    val key = heat.sumOf { it.contentHashCode() }
+    val p = entrance(key, 900)
+    val sel = rememberSelection(key)
+    val density = LocalDensity.current
+    val left = with(density) { 22.dp.toPx() }
+    val top = with(density) { 14.dp.toPx() }
+    Canvas(
+        Modifier.fillMaxWidth().height(170.dp)
+            .chartTouch(sel, 7 * 24) { o, w ->
+                val cw = (w - left) / 24f
+                val ch = with(density) { (170.dp.toPx() - top) / 7f }
+                val hr = ((o.x - left) / cw).toInt()
+                val d = ((o.y - top) / ch).toInt()
+                if (o.x < left || o.y < top || hr !in 0 until 24 || d !in 0 until 7) -1 else d * 24 + hr
+            }
+    ) {
         val cw = (size.width - left) / 24f
         val ch = (size.height - top) / 7f
         val pad = 1.dp.toPx()
@@ -112,19 +160,37 @@ fun HeatMap(heat: Array<FloatArray>, color: Color) {
             val t = measurer.measure("$hr", labelStyle)
             drawText(t, topLeft = Offset(left + hr * cw, 0f))
         }
+        val tipA = sel.alpha.value
         for (d in 0 until 7) {
             val t = measurer.measure(WEEKDAYS[d], labelStyle)
             drawText(t, topLeft = Offset(0f, top + d * ch + ch / 2f - t.size.height / 2f))
             for (hr in 0 until 24) {
                 val v = heat[d][hr]
-                val c = if (v <= 0f || maxV <= 0f) empty else color.copy(alpha = 0.15f + 0.85f * (v / maxV))
+                // fala po przekątnej: lewy-górny róg pierwszy
+                val q = ((p * 1.6f - (hr / 23f + d / 6f) * 0.3f)).coerceIn(0f, 1f)
+                val target = if (v <= 0f || maxV <= 0f) empty else color.copy(alpha = 0.15f + 0.85f * (v / maxV))
+                val c = if (target == empty) empty else lerp(empty, target, q)
+                val shrink = (1f - q) * cw * 0.25f
                 drawRoundRect(
                     color = c,
-                    topLeft = Offset(left + hr * cw + pad, top + d * ch + pad),
-                    size = Size(cw - 2 * pad, ch - 2 * pad),
+                    topLeft = Offset(left + hr * cw + pad + shrink, top + d * ch + pad + shrink),
+                    size = Size(maxOf(0f, cw - 2 * pad - 2 * shrink), maxOf(0f, ch - 2 * pad - 2 * shrink)),
                     cornerRadius = CornerRadius(2.dp.toPx(), 2.dp.toPx()),
                 )
             }
+        }
+        val s = sel.last
+        if (s >= 0 && tipA > 0f) {
+            val d = s / 24
+            val hr = s % 24
+            drawRoundRect(
+                ring.copy(alpha = tipA),
+                Offset(left + hr * cw, top + d * ch),
+                Size(cw, ch),
+                CornerRadius(3.dp.toPx(), 3.dp.toPx()),
+                style = Stroke(1.5.dp.toPx()),
+            )
+            tooltip(measurer, "${WEEKDAYS[d]} $hr:00 · ${format(heat[d][hr])}", left + hr * cw + cw / 2f, top + d * ch, tipStyle, tipBg, tipA)
         }
     }
 }
@@ -248,14 +314,14 @@ fun CounterDetail(
                     Spacer(Modifier.height(14.dp))
                     Eyebrow("Tydzień po tygodniu (od poniedziałku)")
                     Spacer(Modifier.height(6.dp))
-                    LabeledBars(weekLabels(st.weeks), st.weeks.map { it.second }, col, f, labelEvery = maxOf(1, st.weeks.size / 6))
+                    LabeledBars(weekLabels(st.weeks), st.weeks.map { it.second }, col, f, labelEvery = maxOf(1, st.weeks.size / 6), tipLabels = weekLabels(st.weeks).map { "tydz. od $it" })
                 }
             }
         }
 
         item {
             StatSection("Pora dnia", peakText(st.hours, f) ?: "Brak kliknięć w tym okresie.") {
-                LabeledBars((0 until 24).map { "$it" }, st.hours.toList(), col, f, labelEvery = 3)
+                LabeledBars((0 until 24).map { "$it" }, st.hours.toList(), col, f, labelEvery = 3, tipLabels = HOUR_TIPS)
                 Spacer(Modifier.height(10.dp))
                 Stats.PART_LABELS.forEachIndexed { i, label -> InfoLine(label, "${st.partsOfDay[i].toInt()}%") }
             }
@@ -275,7 +341,7 @@ fun CounterDetail(
             var best = -1
             for (i in 0 until 7) if (st.weekdayAvg[i] > 0f && (best < 0 || st.weekdayAvg[i] > st.weekdayAvg[best])) best = i
             StatSection("Dni tygodnia", if (best >= 0) "Średni wynik w danym dniu tygodnia. Najwięcej: ${WEEKDAYS_LONG[best]}." else "Średni wynik w danym dniu tygodnia.") {
-                LabeledBars(WEEKDAYS, st.weekdayAvg.toList(), col, f, showValues = true)
+                LabeledBars(WEEKDAYS, st.weekdayAvg.toList(), col, f, showValues = true, tipLabels = WEEKDAYS_LONG)
             }
         }
 
@@ -374,14 +440,14 @@ fun TrackerDetail(
                     Spacer(Modifier.height(14.dp))
                     Eyebrow("Tydzień po tygodniu (od poniedziałku)")
                     Spacer(Modifier.height(6.dp))
-                    LabeledBars(weekLabels(st.weeks), st.weeks.map { it.second }, col, fm, labelEvery = maxOf(1, st.weeks.size / 6))
+                    LabeledBars(weekLabels(st.weeks), st.weeks.map { it.second }, col, fm, labelEvery = maxOf(1, st.weeks.size / 6), tipLabels = weekLabels(st.weeks).map { "tydz. od $it" })
                 }
             }
         }
 
         item {
             StatSection("Kiedy się zaczyna", "Średnio start o ${Stats.hhmm(st.avgStartMin)}, koniec o ${Stats.hhmm(st.avgEndMin)}.") {
-                LabeledBars((0 until 24).map { "$it" }, st.startHours.toList(), col, fc, labelEvery = 3)
+                LabeledBars((0 until 24).map { "$it" }, st.startHours.toList(), col, fc, labelEvery = 3, tipLabels = HOUR_TIPS)
             }
         }
 
@@ -390,7 +456,7 @@ fun TrackerDetail(
             st.activeHours.forEachIndexed { h, m -> parts[Stats.partOfDay(h)] += m }
             val ps = parts.sum()
             StatSection("Kiedy trwa", peakText(st.activeHours, fm) ?: "Brak zdarzeń w tym okresie.") {
-                LabeledBars((0 until 24).map { "$it" }, st.activeHours.toList(), col, fm, labelEvery = 3)
+                LabeledBars((0 until 24).map { "$it" }, st.activeHours.toList(), col, fm, labelEvery = 3, tipLabels = HOUR_TIPS)
                 Spacer(Modifier.height(10.dp))
                 Stats.PART_LABELS.forEachIndexed { i, label ->
                     InfoLine(label, if (ps > 0f) "${(parts[i] / ps * 100).toInt()}% · ${fm(parts[i])}" else "–")
@@ -400,16 +466,16 @@ fun TrackerDetail(
 
         item {
             StatSection("Dni tygodnia", "Średni czas i średnia liczba zdarzeń w danym dniu tygodnia.") {
-                LabeledBars(WEEKDAYS, st.weekdayMinutes.toList(), col, fm, showValues = true)
+                LabeledBars(WEEKDAYS, st.weekdayMinutes.toList(), col, fm, showValues = true, tipLabels = WEEKDAYS_LONG)
                 Spacer(Modifier.height(8.dp))
                 Eyebrow("Średnia liczba zdarzeń")
-                LabeledBars(WEEKDAYS, st.weekdayCount.toList(), col, fc, showValues = true, chartHeight = 100.dp)
+                LabeledBars(WEEKDAYS, st.weekdayCount.toList(), col, fc, showValues = true, chartHeight = 100.dp, tipLabels = WEEKDAYS_LONG)
             }
         }
 
         item {
             StatSection("Mapa tygodnia", "Dzień tygodnia × godzina. Ciemniejsze pole = więcej czasu.") {
-                HeatMap(st.heat, col)
+                HeatMap(st.heat, col, fm)
             }
         }
 
