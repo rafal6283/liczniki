@@ -1,0 +1,60 @@
+    cd /Users/runner/work/liczniki/liczniki/ios
+    /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -Xlinker -reproducible -target arm64-apple-ios17.0 -isysroot /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.5.sdk -Os -L/Users/runner/work/liczniki/liczniki/ios/build/EagerLinkingTBDs/Release-iphoneos -L/Users/runner/work/liczniki/liczniki/ios/build/Release-iphoneos -F/Users/runner/work/liczniki/liczniki/ios/build/EagerLinkingTBDs/Release-iphoneos -F/Users/runner/work/liczniki/liczniki/ios/build/Release-iphoneos -filelist /Users/runner/work/liczniki/liczniki/ios/build/Kreska.build/Release-iphoneos/Kreska.build/Objects-normal/arm64/Kreska.LinkFileList -Xlinker -rpath -Xlinker @executable_path/Frameworks -dead_strip -Xlinker -object_path_lto -Xlinker /Users/runner/work/liczniki/liczniki/ios/build/Kreska.build/Release-iphoneos/Kreska.build/Objects-normal/arm64/Kreska_lto.o -Xlinker -dependency_info -Xlinker /Users/runner/work/liczniki/liczniki/ios/build/Kreska.build/Release-iphoneos/Kreska.build/Objects-normal/arm64/Kreska_dependency_info.dat -fobjc-link-runtime -L/Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/iphoneos -L/usr/lib/swift -Xlinker -add_ast_path -Xlinker /Users/runner/work/liczniki/liczniki/ios/build/Kreska.build/Release-iphoneos/Kreska.build/Objects-normal/arm64/Kreska.swiftmodule -o /Users/runner/work/liczniki/liczniki/ios/build/Release-iphoneos/Kreska.app/Kreska
+
+LinkAssetCatalog /Users/runner/work/liczniki/liczniki/ios/App/Assets.xcassets (in target 'Kreska' from project 'Kreska')
+    cd /Users/runner/work/liczniki/liczniki/ios
+    builtin-linkAssetCatalog --thinned /Users/runner/work/liczniki/liczniki/ios/build/Kreska.build/Release-iphoneos/Kreska.build/assetcatalog_output/thinned --thinned-dependencies /Users/runner/work/liczniki/liczniki/ios/build/Kreska.build/Release-iphoneos/Kreska.build/assetcatalog_dependencies_thinned --thinned-info-plist-content /Users/runner/work/liczniki/liczniki/ios/build/Kreska.build/Release-iphoneos/Kreska.build/assetcatalog_generated_info.plist_thinned --unthinned /Users/runner/work/liczniki/liczniki/ios/build/Kreska.build/Release-iphoneos/Kreska.build/assetcatalog_output/unthinned --unthinned-dependencies /Users/runner/work/liczniki/liczniki/ios/build/Kreska.build/Release-iphoneos/Kreska.build/assetcatalog_dependencies_unthinned --unthinned-info-plist-content /Users/runner/work/liczniki/liczniki/ios/build/Kreska.build/Release-iphoneos/Kreska.build/assetcatalog_generated_info.plist_unthinned --output /Users/runner/work/liczniki/liczniki/ios/build/Release-iphoneos/Kreska.app --plist-output /Users/runner/work/liczniki/liczniki/ios/build/Kreska.build/Release-iphoneos/Kreska.build/assetcatalog_generated_info.plist
+note: Emplaced /Users/runner/work/liczniki/liczniki/ios/build/Release-iphoneos/Kreska.app/AppIcon76x76@2x~ipad.png (in target 'Kreska' from project 'Kreska')
+note: Emplaced /Users/runner/work/liczniki/liczniki/ios/build/Release-iphoneos/Kreska.app/Assets.car (in target 'Kreska' from project 'Kreska')
+note: Emplaced /Users/runner/work/liczniki/liczniki/ios/build/Release-iphoneos/Kreska.app/AppIcon60x60@2x.png (in target 'Kreska' from project 'Kreska')
+
+Copy /Users/runner/work/liczniki/liczniki/ios/build/Release-iphoneos/Kreska.app/PlugIns/KreskaWidgets.appex /Users/runner/work/liczniki/liczniki/ios/build/Release-iphoneos/KreskaWidgets.appex (in target 'Kreska' from project 'Kreska')
+    cd /Users/runner/work/liczniki/liczniki/ios
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -exclude Headers -exclude PrivateHeaders -exclude Modules -exclude \*.tbd -resolve-src-symlinks -remove-static-executable /Users/runner/work/liczniki/liczniki/ios/build/Release-iphoneos/KreskaWidgets.appex /Users/runner/work/liczniki/liczniki/ios/build/Release-iphoneos/Kreska.app/PlugIns
+
+ProcessInfoPlistFile /Users/runner/work/liczniki/liczniki/ios/build/Release-iphoneos/Kreska.app/Info.plist /Users/runner/work/liczniki/liczniki/ios/Support/App-Info.plist (in target 'Kreska' from project 'Kreska')
+    cd /Users/runner/work/liczniki/liczniki/ios
+    builtin-infoPlistUtility /Users/runner/work/liczniki/liczniki/ios/Support/App-Info.plist -producttype com.apple.product-type.application -genpkginfo /Users/runner/work/liczniki/liczniki/ios/build/Release-iphoneos/Kreska.app/PkgInfo -expandbuildsettings -format binary -platform iphoneos -additionalcontentfile /Users/runner/work/liczniki/liczniki/ios/build/Kreska.build/Release-iphoneos/Kreska.build/assetcatalog_generated_info.plist -scanforprivacyfile /Users/runner/work/liczniki/liczniki/ios/build/Release-iphoneos/Kreska.app/PlugIns/KreskaWidgets.appex -requiredArchitecture arm64 -o /Users/runner/work/liczniki/liczniki/ios/build/Release-iphoneos/Kreska.app/Info.plist
+
+ExtractAppIntentsMetadata (in target 'Kreska' from project 'Kreska')
+    cd /Users/runner/work/liczniki/liczniki/ios
+    /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/appintentsmetadataprocessor --toolchain-dir /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain --module-name Kreska --sdk-root /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.5.sdk --xcode-version 16F6 --platform-family iOS --deployment-target 17.0 --bundle-identifier pl.kreska.app --output /Users/runner/work/liczniki/liczniki/ios/build/Release-iphoneos/Kreska.app --target-triple arm64-apple-ios17.0 --binary-file /Users/runner/work/liczniki/liczniki/ios/build/Release-iphoneos/Kreska.app/Kreska --dependency-file /Users/runner/work/liczniki/liczniki/ios/build/Kreska.build/Release-iphoneos/Kreska.build/Objects-normal/arm64/Kreska_dependency_info.dat --stringsdata-file /Users/runner/work/liczniki/liczniki/ios/build/Kreska.build/Release-iphoneos/Kreska.build/Objects-normal/arm64/ExtractedAppShortcutsMetadata.stringsdata --source-file-list /Users/runner/work/liczniki/liczniki/ios/build/Kreska.build/Release-iphoneos/Kreska.build/Objects-normal/arm64/Kreska.SwiftFileList --metadata-file-list /Users/runner/work/liczniki/liczniki/ios/build/Kreska.build/Release-iphoneos/Kreska.build/Kreska.DependencyMetadataFileList --static-metadata-file-list /Users/runner/work/liczniki/liczniki/ios/build/Kreska.build/Release-iphoneos/Kreska.build/Kreska.DependencyStaticMetadataFileList --swift-const-vals-list /Users/runner/work/liczniki/liczniki/ios/build/Kreska.build/Release-iphoneos/Kreska.build/Objects-normal/arm64/Kreska.SwiftConstValuesFileList --compile-time-extraction --deployment-aware-processing --validate-assistant-intents --no-app-shortcuts-localization
+2026-10-24 10:16:50.748 appintentsmetadataprocessor[8017:28033] Starting appintentsmetadataprocessor export
+2026-10-24 10:16:50.836 appintentsmetadataprocessor[8017:28033] Writing Metadata.appintents
+2026-10-24 10:16:50.836 appintentsmetadataprocessor[8017:28033] Metadata root: /Users/runner/work/liczniki/liczniki/ios/build/Release-iphoneos/Kreska.app/Metadata.appintents
+
+CopySwiftLibs /Users/runner/work/liczniki/liczniki/ios/build/Release-iphoneos/Kreska.app (in target 'Kreska' from project 'Kreska')
+    cd /Users/runner/work/liczniki/liczniki/ios
+    builtin-swiftStdLibTool --copy --verbose --scan-executable /Users/runner/work/liczniki/liczniki/ios/build/Release-iphoneos/Kreska.app/Kreska --scan-folder /Users/runner/work/liczniki/liczniki/ios/build/Release-iphoneos/Kreska.app/Frameworks --scan-folder /Users/runner/work/liczniki/liczniki/ios/build/Release-iphoneos/Kreska.app/PlugIns --scan-folder /Users/runner/work/liczniki/liczniki/ios/build/Release-iphoneos/Kreska.app/SystemExtensions --scan-folder /Users/runner/work/liczniki/liczniki/ios/build/Release-iphoneos/Kreska.app/Extensions --platform iphoneos --toolchain /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain --destination /Users/runner/work/liczniki/liczniki/ios/build/Release-iphoneos/Kreska.app/Frameworks --strip-bitcode --strip-bitcode-tool /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/bitcode_strip --emit-dependency-info /Users/runner/work/liczniki/liczniki/ios/build/Kreska.build/Release-iphoneos/Kreska.build/SwiftStdLibToolInputDependencies.dep --filter-for-swift-os
+Ignoring --strip-bitcode because --sign was not passed
+
+ValidateEmbeddedBinary /Users/runner/work/liczniki/liczniki/ios/build/Release-iphoneos/Kreska.app/PlugIns/KreskaWidgets.appex (in target 'Kreska' from project 'Kreska')
+    cd /Users/runner/work/liczniki/liczniki/ios
+    /Applications/Xcode_16.4.app/Contents/Developer/usr/bin/embeddedBinaryValidationUtility /Users/runner/work/liczniki/liczniki/ios/build/Release-iphoneos/Kreska.app/PlugIns/KreskaWidgets.appex -info-plist-path /Users/runner/work/liczniki/liczniki/ios/build/Release-iphoneos/Kreska.app/Info.plist
+
+GenerateDSYMFile /Users/runner/work/liczniki/liczniki/ios/build/Release-iphoneos/Kreska.app.dSYM /Users/runner/work/liczniki/liczniki/ios/build/Release-iphoneos/Kreska.app/Kreska (in target 'Kreska' from project 'Kreska')
+    cd /Users/runner/work/liczniki/liczniki/ios
+    /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/dsymutil /Users/runner/work/liczniki/liczniki/ios/build/Release-iphoneos/Kreska.app/Kreska -o /Users/runner/work/liczniki/liczniki/ios/build/Release-iphoneos/Kreska.app.dSYM
+
+AppIntentsSSUTraining (in target 'Kreska' from project 'Kreska')
+    cd /Users/runner/work/liczniki/liczniki/ios
+    /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/appintentsnltrainingprocessor --infoplist-path /Users/runner/work/liczniki/liczniki/ios/build/Release-iphoneos/Kreska.app/Info.plist --temp-dir-path /Users/runner/work/liczniki/liczniki/ios/build/Kreska.build/Release-iphoneos/Kreska.build/ssu --bundle-id pl.kreska.app --product-path /Users/runner/work/liczniki/liczniki/ios/build/Release-iphoneos/Kreska.app --extracted-metadata-path /Users/runner/work/liczniki/liczniki/ios/build/Release-iphoneos/Kreska.app/Metadata.appintents --metadata-file-list /Users/runner/work/liczniki/liczniki/ios/build/Kreska.build/Release-iphoneos/Kreska.build/Kreska.DependencyMetadataFileList --archive-ssu-assets
+2026-10-24 10:16:50.872 appintentsnltrainingprocessor[8026:28090] Parsing options for appintentsnltrainingprocessor
+2026-10-24 10:16:50.874 appintentsnltrainingprocessor[8026:28090] Starting AppIntents SSU YAML Generation
+2026-10-24 10:16:50.890 appintentsnltrainingprocessor[8026:28090] No AppShortcuts found - Skipping.
+
+RegisterExecutionPolicyException /Users/runner/work/liczniki/liczniki/ios/build/Release-iphoneos/Kreska.app (in target 'Kreska' from project 'Kreska')
+    cd /Users/runner/work/liczniki/liczniki/ios
+    builtin-RegisterExecutionPolicyException /Users/runner/work/liczniki/liczniki/ios/build/Release-iphoneos/Kreska.app
+
+Validate /Users/runner/work/liczniki/liczniki/ios/build/Release-iphoneos/Kreska.app (in target 'Kreska' from project 'Kreska')
+    cd /Users/runner/work/liczniki/liczniki/ios
+    builtin-validationUtility /Users/runner/work/liczniki/liczniki/ios/build/Release-iphoneos/Kreska.app -infoplist-subpath Info.plist
+warning: All interface orientations must be supported unless the app requires full screen. (in target 'Kreska' from project 'Kreska')
+
+Touch /Users/runner/work/liczniki/liczniki/ios/build/Release-iphoneos/Kreska.app (in target 'Kreska' from project 'Kreska')
+    cd /Users/runner/work/liczniki/liczniki/ios
+    /usr/bin/touch -c /Users/runner/work/liczniki/liczniki/ios/build/Release-iphoneos/Kreska.app
+
+** BUILD SUCCEEDED **
+
