@@ -123,7 +123,8 @@ object Notifier {
         val running = Repo.running().associateBy { it.trackerId }
         Repo.trackers().forEachIndexed { i, t ->
             val s = running[t.id]
-            if (s != null || t.notify) {
+            // wyłączone w powiadomieniach — nie pokazujemy nawet w trakcie (Stop w aplikacji)
+            if (t.notify) {
                 val id = BASE_TRACKER + t.id.toInt()
                 wanted += id
                 post(ctx, id, trackerNotification(ctx, t, s, i, f, hide))

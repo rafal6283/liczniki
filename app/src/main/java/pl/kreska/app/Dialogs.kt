@@ -197,9 +197,10 @@ fun TrackerDialog(existing: Tracker?, defaultColor: Int, onDismiss: () -> Unit) 
                     singleLine = true, modifier = Modifier.fillMaxWidth(),
                 )
                 ColorPicker(color) { color = it }
-                SwitchRow("Przycisk Start w powiadomieniach", notify) { notify = it }
+                SwitchRow("Pokaż w powiadomieniach", notify) { notify = it }
                 Text(
-                    "Trwające zdarzenie zawsze ma powiadomienie ze stoperem i przyciskiem Stop.",
+                    if (notify) "Ciche powiadomienie z przyciskiem Start, a w trakcie ze stoperem i przyciskami Pauza/Stop."
+                    else "Zdarzenie nie pojawia się w powiadomieniach, także gdy trwa — zatrzymasz je w aplikacji.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -372,6 +373,10 @@ fun SettingsDialog(onDismiss: () -> Unit, onKoofr: () -> Unit = {}) {
     var goalNotify by remember { mutableStateOf(Prefs.goalNotify(ctx)) }
     var fields by remember { mutableStateOf(Prefs.notifFields(ctx)) }
     var hideOnLock by remember { mutableStateOf(Prefs.notifHideOnLock(ctx)) }
+    val counters = remember { Repo.counters() }
+    val trackers = remember { Repo.trackers() }
+    var shownC by remember { mutableStateOf(counters.filter { it.notify }.map { it.id }.toSet()) }
+    var shownT by remember { mutableStateOf(trackers.filter { it.notify }.map { it.id }.toSet()) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -405,6 +410,15 @@ fun SettingsDialog(onDismiss: () -> Unit, onKoofr: () -> Unit = {}) {
                 }
                 HorizontalDivider()
                 Text("Ciche powiadomienia w panelu", fontWeight = FontWeight.SemiBold)
+                if (counters.isNotEmpty() || trackers.isNotEmpty()) {
+                    Text("Widoczne w powiadomieniach", style = MaterialTheme.typography.labelLarge)
+                    counters.forEach { c ->
+                        SwitchRow("${c.name} (licznik)", c.id in shownC) { on -> shownC = if (on) shownC + c.id else shownC - c.id }
+                    }
+                    trackers.forEach { t ->
+                        SwitchRow("${t.name} (zdarzenie)", t.id in shownT) { on -> shownT = if (on) shownT + t.id else shownT - t.id }
+                    }
+                }
                 Text(
                     "Co pokazywać w stałych powiadomieniach liczników i zdarzeń. Nazwa i dzisiejsza wartość są zawsze.",
                     style = MaterialTheme.typography.bodySmall,
@@ -446,6 +460,8 @@ fun SettingsDialog(onDismiss: () -> Unit, onKoofr: () -> Unit = {}) {
             TextButton(onClick = {
                 Prefs.save(ctx, remOn, remMin, overdue, goalNotify)
                 Prefs.saveNotif(ctx, fields, hideOnLock)
+                counters.filter { (it.id in shownC) != it.notify }.forEach { Repo.saveCounter(it.copy(notify = it.id in shownC)) }
+                trackers.filter { (it.id in shownT) != it.notify }.forEach { Repo.saveTracker(it.copy(notify = it.id in shownT)) }
                 Notifier.refresh(ctx)
                 Alarms.scheduleAll(ctx)
                 onDismiss()
