@@ -13,6 +13,9 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.material3.Surface
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
@@ -102,6 +105,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        pl.rafal.koofr.Koofr.autoRunAsync()
         // Dane mogły się zmienić z poziomu powiadomień albo minęła północ.
         Notifier.refresh(this)
         Repo.bump()
@@ -116,6 +120,7 @@ private val TAB_ICONS = listOf(R.drawable.ic_nav_tally, R.drawable.ic_nav_timer,
 fun AppRoot(tabState: MutableIntState) {
     var tab by tabState
     var showSettings by remember { mutableStateOf(false) }
+    var showKoofr by remember { mutableStateOf(false) }
     val ctx = LocalContext.current
 
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
@@ -131,6 +136,14 @@ fun AppRoot(tabState: MutableIntState) {
 
     val v by Repo.version.collectAsState()
     val anyRunning = remember(v) { Repo.running().isNotEmpty() }
+
+    if (showKoofr) {
+        androidx.activity.compose.BackHandler { showKoofr = false }
+        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+            Box(Modifier.statusBarsPadding()) { pl.rafal.koofr.KoofrScreen(onBack = { showKoofr = false }) }
+        }
+        return
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -171,5 +184,5 @@ fun AppRoot(tabState: MutableIntState) {
         }
     }
 
-    if (showSettings) SettingsDialog(onDismiss = { showSettings = false })
+    if (showSettings) SettingsDialog(onDismiss = { showSettings = false }, onKoofr = { showSettings = false; showKoofr = true })
 }

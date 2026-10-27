@@ -364,7 +364,7 @@ fun DayValueDialog(c: Counter, onDismiss: () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsDialog(onDismiss: () -> Unit) {
+fun SettingsDialog(onDismiss: () -> Unit, onKoofr: () -> Unit = {}) {
     val ctx = LocalContext.current
     var remOn by remember { mutableStateOf(Prefs.reminderOn(ctx)) }
     var remMin by remember { mutableIntStateOf(Prefs.reminderMinutes(ctx)) }
@@ -429,6 +429,9 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                 }
                 SwitchRow("Na ekranie blokady tylko nazwy", hideOnLock) { hideOnLock = it }
                 TextButton(onClick = { fields = NotifField.defaults }) { Text("Przywróć domyślne") }
+                HorizontalDivider()
+                Text("Kopia zapasowa", fontWeight = FontWeight.SemiBold)
+                TextButton(onClick = onKoofr) { Text("Kopia na rodzinnym Koofr…") }
                 HorizontalDivider()
                 TextButton(onClick = {
                     ctx.startActivity(

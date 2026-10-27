@@ -227,6 +227,28 @@ object Repo {
 
     private val db: SQLiteDatabase get() = helper.writableDatabase
 
+    /** Spójna kopia pliku bazy (do kopii zapasowej). */
+    @Synchronized
+    fun snapshot(): ByteArray {
+        try {
+            db.rawQuery("PRAGMA wal_checkpoint(FULL)", null).use { it.moveToFirst() }
+        } catch (_: Exception) {
+        }
+        return app.getDatabasePath("kreska.db").readBytes()
+    }
+
+    /** Podmiana całej bazy (przywracanie kopii). Obecna zostaje obok jako zapas. */
+    @Synchronized
+    fun replaceDatabase(bytes: ByteArray) {
+        helper.close()
+        val f = app.getDatabasePath("kreska.db")
+        if (f.exists()) f.copyTo(java.io.File(f.path + ".przed-przywroceniem"), overwrite = true)
+        listOf("-wal", "-shm", "-journal").forEach { java.io.File(f.path + it).delete() }
+        f.writeBytes(bytes)
+        helper = Db(app)
+        changed()
+    }
+
     fun bump() {
         version.value = version.value + 1
     }

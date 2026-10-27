@@ -9,5 +9,7 @@ class KreskaApp : Application() {
         Notifier.createChannels(this)
         Alarms.scheduleAll(this)
         Notifier.refresh(this)
+        // kopia na rodzinnym Koofr (szyfrowana na telefonie)
+        pl.rafal.koofr.Koofr.init(this, KreskaCloud)
     }
 }
