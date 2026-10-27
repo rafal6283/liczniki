@@ -22,6 +22,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -369,6 +370,8 @@ fun SettingsDialog(onDismiss: () -> Unit) {
     var remMin by remember { mutableIntStateOf(Prefs.reminderMinutes(ctx)) }
     var overdue by remember { mutableIntStateOf(Prefs.overdueHours(ctx)) }
     var goalNotify by remember { mutableStateOf(Prefs.goalNotify(ctx)) }
+    var fields by remember { mutableStateOf(Prefs.notifFields(ctx)) }
+    var hideOnLock by remember { mutableStateOf(Prefs.notifHideOnLock(ctx)) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -401,6 +404,32 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                     }
                 }
                 HorizontalDivider()
+                Text("Ciche powiadomienia w panelu", fontWeight = FontWeight.SemiBold)
+                Text(
+                    "Co pokazywać w stałych powiadomieniach liczników i zdarzeń. Nazwa i dzisiejsza wartość są zawsze.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                NotifField.Group.entries.forEach { g ->
+                    Text(g.title, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 4.dp))
+                    NotifField.entries.filter { it.group == g }.forEach { field ->
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .clickable { fields = if (field in fields) fields - field else fields + field },
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Checkbox(
+                                checked = field in fields,
+                                onCheckedChange = { on -> fields = if (on) fields + field else fields - field },
+                            )
+                            Text(field.label, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                }
+                SwitchRow("Na ekranie blokady tylko nazwy", hideOnLock) { hideOnLock = it }
+                TextButton(onClick = { fields = NotifField.defaults }) { Text("Przywróć domyślne") }
+                HorizontalDivider()
                 TextButton(onClick = {
                     ctx.startActivity(
                         Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
@@ -413,6 +442,8 @@ fun SettingsDialog(onDismiss: () -> Unit) {
         confirmButton = {
             TextButton(onClick = {
                 Prefs.save(ctx, remOn, remMin, overdue, goalNotify)
+                Prefs.saveNotif(ctx, fields, hideOnLock)
+                Notifier.refresh(ctx)
                 Alarms.scheduleAll(ctx)
                 onDismiss()
             }) { Text("Zapisz") }

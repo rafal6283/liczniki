@@ -109,6 +109,22 @@ object Prefs {
     fun overdueHours(ctx: Context): Int = sp(ctx).getInt("overdue_h", 4)
     fun goalNotify(ctx: Context): Boolean = sp(ctx).getBoolean("goal_notify", true)
 
+    /** Parametry pokazywane w cichych powiadomieniach (klucze [NotifField]). */
+    fun notifFields(ctx: Context): Set<NotifField> {
+        val keys = sp(ctx).getStringSet("notif_fields", null) ?: return NotifField.defaults
+        return NotifField.entries.filter { it.key in keys }.toSet()
+    }
+
+    /** Na ekranie blokady same nazwy, bez liczb i czasów. */
+    fun notifHideOnLock(ctx: Context): Boolean = sp(ctx).getBoolean("notif_lock_hide", false)
+
+    fun saveNotif(ctx: Context, fields: Set<NotifField>, hideOnLock: Boolean) {
+        sp(ctx).edit()
+            .putStringSet("notif_fields", fields.map { it.key }.toSet())
+            .putBoolean("notif_lock_hide", hideOnLock)
+            .apply()
+    }
+
     /** Ostatni moment, w którym użytkownik korzystał z aplikacji lub jej powiadomień. */
     fun touch(ctx: Context) {
         sp(ctx).edit().putLong("last_seen", System.currentTimeMillis()).apply()
