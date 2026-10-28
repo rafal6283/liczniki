@@ -93,7 +93,7 @@ object KreskaExchange : KoofrExchange {
 
     override val publishes = "Wybrane liczniki z godzinami kliknięć (np. FF dla Dziennika talerza i Doby)"
     override val sources = listOf(
-        SRC_NIGHT_NEW to "Rytm Snu (wiatry w nocy)",
+        SRC_NIGHT_NEW to "Rytm Snu (FF w nocy)",
         SRC_ECG to "Polar EKG (epizody AF)",
     )
 

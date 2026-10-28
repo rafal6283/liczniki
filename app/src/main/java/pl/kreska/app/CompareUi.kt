@@ -79,7 +79,8 @@ fun rememberCompare(v: Long, from: LocalDate, to: LocalDate, cfg: Int): CompareD
 
 @Composable
 private fun SourcesLine(d: CompareData) {
-    val parts = listOf(SRC_NIGHT, SRC_ECG).map { s ->
+    // Rytm Snu pokazujemy dopiero, gdy są z niego dane
+    val parts = listOf(SRC_NIGHT, SRC_ECG).filter { it != SRC_NIGHT || d.sources.containsKey(it) }.map { s ->
         val info = d.sources[s]
         Exchange.sourceLabel(s) + ": " + if (info == null) "brak importu" else "eksport ${Dates.dateTime(info.first)}"
     }
@@ -91,7 +92,7 @@ private fun FartSummary(d: CompareData) {
     val f = d.farts
     when {
         d.counter == null -> Hint("Wybierz licznik FF w ustawieniach porównania.")
-        f == null -> Hint("Zaimportuj plik z Rytmu Snu (Ustawienia → Eksport wiatrów do Kreski) albo włącz wymianę przez Koofr.")
+        f == null -> Hint("Brak danych z Rytmu Snu.")
         else -> StatsGrid(
             listOf(
                 "${f.combined}" to "łącznie (bez podwójnego liczenia)",
@@ -137,10 +138,12 @@ fun CompareCard(v: Long, from: LocalDate, to: LocalDate, cfg: Int, onImport: () 
     val d = rememberCompare(v, from, to, cfg)
     AppCard {
         Eyebrow("Porównanie z aplikacjami")
-        Text("${d.counter?.name ?: "FF"} ↔ wiatry z Rytmu Snu", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        FartSummary(d)
-        HorizontalDivider()
-        Spacer(Modifier.height(10.dp))
+        if (d.sources.containsKey(SRC_NIGHT)) {
+            Text("${d.counter?.name ?: "FF"} ↔ Rytm Snu", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            FartSummary(d)
+            HorizontalDivider()
+            Spacer(Modifier.height(10.dp))
+        }
         Text("${d.tracker?.name ?: "AFIB"} ↔ migotanie w Polar EKG", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         AfSummary(d)
         SourcesLine(d)
@@ -170,8 +173,8 @@ fun CompareDetail(v: Long, days: List<LocalDate>, range: Int, onRange: (Int) -> 
                 RangeChips(range, onRange)
             }
         }
-        item {
-            StatSection("${d.counter?.name ?: "FF"} ↔ wiatry", "Za ${if (range == 365) "rok" else "$range dni"}. Dopasowanie ±${d.tolSec} s.") {
+        if (d.sources.containsKey(SRC_NIGHT)) item {
+            StatSection("${d.counter?.name ?: "FF"} ↔ Rytm Snu", "Za ${if (range == 365) "rok" else "$range dni"}. Dopasowanie ±${d.tolSec} s.") {
                 FartSummary(d)
             }
         }
@@ -228,7 +231,7 @@ fun CompareDetail(v: Long, days: List<LocalDate>, range: Int, onRange: (Int) -> 
         item {
             Text(
                 "Wpisy FF w nocy nie są pełną prawdą (śpiąc nie klikasz), więc „tylko detektor” to nie zawsze błąd. " +
-                    "Odrzucone w Nocnym liczniku (✗) wiatry są pominięte. Korekty dnia bez godziny nie biorą udziału w dopasowaniu.",
+                    "Odrzucone w Rytmie Snu (✗) zdarzenia są pominięte. Korekty dnia bez godziny nie biorą udziału w dopasowaniu.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -250,7 +253,7 @@ fun CompareSettingsDialog(onDismiss: () -> Unit, onSaved: () -> Unit) {
         title = { Text("Porównanie z aplikacjami") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Licznik do porównania z wiatrami", fontWeight = FontWeight.SemiBold)
+                Text("Licznik do porównania z Rytmem Snu", fontWeight = FontWeight.SemiBold)
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     counters.forEach { c -> FilterChip(selected = cid == c.id, onClick = { cid = c.id }, label = { Text(c.name) }) }
                 }
@@ -261,7 +264,7 @@ fun CompareSettingsDialog(onDismiss: () -> Unit, onSaved: () -> Unit) {
                 HorizontalDivider()
                 Text("Dopasowanie wpisu FF do wykrycia", fontWeight = FontWeight.SemiBold)
                 Text(
-                    "Jak daleko w czasie mogą być od siebie, żeby liczyć je jako ten sam wiatr.",
+                    "Jak daleko w czasie mogą być od siebie, żeby liczyć je jako to samo zdarzenie.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

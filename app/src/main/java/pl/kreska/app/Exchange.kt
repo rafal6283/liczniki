@@ -74,7 +74,7 @@ object Exchange {
             ?: throw IllegalArgumentException("Nie udało się otworzyć pliku")
         val x = parse(text)
         Repo.replaceExternal(x)
-        val what = if (x.source == SRC_NIGHT) "nocy: ${x.windows.size}, wiatrów: ${x.events.count { it.verified != false }}"
+        val what = if (x.source == SRC_NIGHT) "nocy: ${x.windows.size}, FF: ${x.events.count { it.verified != false }}"
         else "fragmentów zapisu: ${x.windows.size}, epizodów AF: ${x.events.size}"
         "Zaimportowano z ${sourceLabel(x.source)} – $what"
     } catch (e: IllegalArgumentException) {
