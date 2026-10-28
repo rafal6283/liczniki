@@ -1,5 +1,6 @@
 package pl.kreska.app
 
+import androidx.compose.foundation.border
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -198,9 +199,12 @@ fun HeatMap(heat: Array<FloatArray>, color: Color, format: (Float) -> String = {
 /* ---------- klocki ---------- */
 
 @Composable
-fun StatSection(title: String, hint: String? = null, content: @Composable () -> Unit) {
+fun StatSection(title: String, hint: String? = null, imported: String? = null, content: @Composable () -> Unit) {
     AppCard {
-        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            if (imported != null) ImportedTag(imported)
+        }
         if (hint != null) {
             Text(hint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -501,4 +505,27 @@ fun TrackerDetail(
             }
         }
     }
+}
+
+
+/**
+ * Delikatne wyróżnienie danych z współpracujących aplikacji (Rytm Snu, Polar EKG):
+ * mała etykieta w obwódce, np. „z Rytmu Snu”.
+ */
+@Composable
+fun ImportedTag(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text,
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = modifier
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, androidx.compose.foundation.shape.RoundedCornerShape(50))
+            .padding(horizontal = 7.dp, vertical = 2.dp),
+    )
+}
+
+fun importedFrom(source: String) = when (source) {
+    SRC_NIGHT, SRC_NIGHT_NEW -> "z Rytmu Snu"
+    SRC_ECG -> "z Polar EKG"
+    else -> "zaimportowane"
 }

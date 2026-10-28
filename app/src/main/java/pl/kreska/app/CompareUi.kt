@@ -1,5 +1,6 @@
 package pl.kreska.app
 
+import androidx.compose.ui.Alignment
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -139,12 +140,18 @@ fun CompareCard(v: Long, from: LocalDate, to: LocalDate, cfg: Int, onImport: () 
     AppCard {
         Eyebrow("Porównanie z aplikacjami")
         if (d.sources.containsKey(SRC_NIGHT)) {
-            Text("${d.counter?.name ?: "FF"} ↔ Rytm Snu", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("${d.counter?.name ?: "FF"} ↔ Rytm Snu", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                if (d.farts != null) ImportedTag(importedFrom(SRC_NIGHT))
+            }
             FartSummary(d)
             HorizontalDivider()
             Spacer(Modifier.height(10.dp))
         }
-        Text("${d.tracker?.name ?: "AFIB"} ↔ migotanie w Polar EKG", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("${d.tracker?.name ?: "AFIB"} ↔ migotanie w Polar EKG", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            if (d.af != null) ImportedTag(importedFrom(SRC_ECG))
+        }
         AfSummary(d)
         SourcesLine(d)
         Spacer(Modifier.height(8.dp))
@@ -174,13 +181,13 @@ fun CompareDetail(v: Long, days: List<LocalDate>, range: Int, onRange: (Int) -> 
             }
         }
         if (d.sources.containsKey(SRC_NIGHT)) item {
-            StatSection("${d.counter?.name ?: "FF"} ↔ Rytm Snu", "Za ${if (range == 365) "rok" else "$range dni"}. Dopasowanie ±${d.tolSec} s.") {
+            StatSection("${d.counter?.name ?: "FF"} ↔ Rytm Snu", "Za ${if (range == 365) "rok" else "$range dni"}. Dopasowanie ±${d.tolSec} s.", importedFrom(SRC_NIGHT)) {
                 FartSummary(d)
             }
         }
         if (f != null && f.windows.isNotEmpty()) {
             item {
-                StatSection("Noce", "detektor · Twoje wpisy · wspólne → łącznie") {
+                StatSection("Noce", "detektor · Twoje wpisy · wspólne → łącznie", importedFrom(SRC_NIGHT)) {
                     Column {
                         f.windows.asReversed().forEach { w ->
                             Row(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
@@ -201,7 +208,7 @@ fun CompareDetail(v: Long, days: List<LocalDate>, range: Int, onRange: (Int) -> 
             }
         }
         item {
-            StatSection("${d.tracker?.name ?: "AFIB"} ↔ migotanie", "EKG liczy się tylko w czasie nagrywania.") {
+            StatSection("${d.tracker?.name ?: "AFIB"} ↔ migotanie", "EKG liczy się tylko w czasie nagrywania.", importedFrom(SRC_ECG)) {
                 AfSummary(d)
                 if (a != null) {
                     InfoLine("Nagrywanie EKG w okresie", durOrDash(a.coverageMs))
@@ -211,7 +218,7 @@ fun CompareDetail(v: Long, days: List<LocalDate>, range: Int, onRange: (Int) -> 
         }
         if (a != null && a.days.isNotEmpty()) {
             item {
-                StatSection("Dni", "EKG · Kreska · wspólnie") {
+                StatSection("Dni", "EKG · Kreska · wspólnie", importedFrom(SRC_ECG)) {
                     Column {
                         a.days.forEach { day ->
                             Row(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
