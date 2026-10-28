@@ -6,18 +6,20 @@ import org.json.JSONObject
 import java.time.LocalDate
 
 /*
- * Import plików „wymiana-zdarzen” v1 z Nocnego licznika i Polar EKG.
+ * Import plików „wymiana-zdarzen” v1 z Rytmu Snu (dawniej Nocny licznik) i Polar EKG.
  *
  * {
  *   "format": "wymiana-zdarzen", "version": 1,
- *   "source": "nocny-licznik" | "polar-ekg", "exported_at": ms,
+ *   "source": "rytm-snu" (dawniej "nocny-licznik") | "polar-ekg", "exported_at": ms,
  *   "windows": [{"start": ms, "end": ms}],           // kiedy aplikacja faktycznie mierzyła
  *   "events":  [{"id": "...", "type": "fart" | "af", "start": ms, "end": ms?, "confidence": 0.8?, "verified": bool?}]
  * }
  * Czasy w ms od epoki (UTC). Każdy plik zawiera całą historię źródła – import zastępuje poprzedni.
  */
 
+/** Rytm Snu — w bazie zostaje dawny identyfikator; pliki z nową nazwą są na niego zamieniane. */
 const val SRC_NIGHT = "nocny-licznik"
+const val SRC_NIGHT_NEW = "rytm-snu"
 const val SRC_ECG = "polar-ekg"
 
 data class ExtEvent(val type: String, val start: Long, val end: Long?, val confidence: Double?, val verified: Boolean?)
@@ -26,7 +28,7 @@ data class ExtImport(val source: String, val exportedAt: Long, val windows: List
 
 object Exchange {
     fun sourceLabel(s: String) = when (s) {
-        SRC_NIGHT -> "Nocny licznik"
+        SRC_NIGHT -> "Rytm Snu"
         SRC_ECG -> "Polar EKG"
         else -> s
     }
@@ -38,9 +40,9 @@ object Exchange {
         } catch (e: Exception) {
             throw IllegalArgumentException("To nie jest plik eksportu (niepoprawny JSON)")
         }
-        if (j.optString("format") != "wymiana-zdarzen") throw IllegalArgumentException("To nie jest plik eksportu z Nocnego licznika ani Polar EKG")
+        if (j.optString("format") != "wymiana-zdarzen") throw IllegalArgumentException("To nie jest plik eksportu z Rytmu Snu ani Polar EKG")
         if (j.optInt("version") != 1) throw IllegalArgumentException("Nieobsługiwana wersja pliku – zaktualizuj Kreskę")
-        val source = j.getString("source")
+        val source = j.getString("source").let { if (it == SRC_NIGHT_NEW) SRC_NIGHT else it }
         if (source != SRC_NIGHT && source != SRC_ECG) throw IllegalArgumentException("Nieznane źródło: $source")
 
         val ws = j.optJSONArray("windows")

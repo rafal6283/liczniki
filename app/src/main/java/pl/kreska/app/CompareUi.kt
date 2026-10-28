@@ -91,7 +91,7 @@ private fun FartSummary(d: CompareData) {
     val f = d.farts
     when {
         d.counter == null -> Hint("Wybierz licznik FF w ustawieniach porównania.")
-        f == null -> Hint("Zaimportuj plik z Nocnego licznika (Ustawienia → Eksport wiatrów do Kreski).")
+        f == null -> Hint("Zaimportuj plik z Rytmu Snu (Ustawienia → Eksport wiatrów do Kreski) albo włącz wymianę przez Koofr.")
         else -> StatsGrid(
             listOf(
                 "${f.combined}" to "łącznie (bez podwójnego liczenia)",
@@ -137,7 +137,7 @@ fun CompareCard(v: Long, from: LocalDate, to: LocalDate, cfg: Int, onImport: () 
     val d = rememberCompare(v, from, to, cfg)
     AppCard {
         Eyebrow("Porównanie z aplikacjami")
-        Text("${d.counter?.name ?: "FF"} ↔ wiatry z Nocnego licznika", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text("${d.counter?.name ?: "FF"} ↔ wiatry z Rytmu Snu", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         FartSummary(d)
         HorizontalDivider()
         Spacer(Modifier.height(10.dp))

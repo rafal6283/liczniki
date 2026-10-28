@@ -5,7 +5,7 @@ import kotlin.math.abs
 /*
  * Porównanie wpisów z Kreski z danymi z innych aplikacji (czysta logika, bez Androida).
  *
- *  - FF ↔ wiatry z Nocnego licznika: zdarzenia punktowe, dopasowanie 1:1 w oknie ±tolerancja.
+ *  - FF ↔ wiatry z Rytmu Snu: zdarzenia punktowe, dopasowanie 1:1 w oknie ±tolerancja.
  *  - AFIB ↔ migotanie z Polar EKG: odcinki czasu, część wspólna / tylko EKG / tylko Kreska.
  *
  * Porównujemy tylko tam, gdzie druga aplikacja faktycznie mierzyła (okna pomiaru: noce, zapisy EKG).
@@ -106,7 +106,7 @@ object FartMerge {
     /**
      * @param manual czasy kliknięć FF (kliknięcie +n daje n pozycji)
      * @param detected czasy wykryć (odrzucone już odfiltrowane)
-     * @param windows noce z Nocnego licznika
+     * @param windows noce z Rytmu Snu
      */
     fun compare(manual: List<Long>, detected: List<Long>, windows: List<Span>, range: Span, tolMs: Long): FartComparison {
         val ws = Spans.clip(windows, range)

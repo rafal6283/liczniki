@@ -182,7 +182,7 @@ private class Db(ctx: Context) : SQLiteOpenHelper(ctx, "kreska.db", null, 3) {
         createExternal(db)
     }
 
-    /** Dane zaimportowane z innych aplikacji (Nocny licznik, Polar EKG). */
+    /** Dane zaimportowane z innych aplikacji (Rytm Snu, Polar EKG). */
     private fun createExternal(db: SQLiteDatabase) {
         db.execSQL(
             "CREATE TABLE ext_sources(source TEXT PRIMARY KEY, exported_at INTEGER NOT NULL, " +

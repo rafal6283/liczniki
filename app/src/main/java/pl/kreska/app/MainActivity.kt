@@ -84,7 +84,7 @@ class MainActivity : ComponentActivity() {
         handleImport(intent)
     }
 
-    /** Plik udostępniony z Nocnego licznika lub Polar EKG („Udostępnij → Kreska”). */
+    /** Plik udostępniony z Rytmu Snu lub Polar EKG („Udostępnij → Kreska”). */
     private fun handleImport(i: Intent) {
         val uri: Uri? = when (i.action) {
             Intent.ACTION_SEND -> IntentCompat.getParcelableExtra(i, Intent.EXTRA_STREAM, Uri::class.java)
