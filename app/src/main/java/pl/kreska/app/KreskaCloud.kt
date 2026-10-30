@@ -91,7 +91,7 @@ object KreskaCloud : KoofrApp {
 object KreskaExchange : KoofrExchange {
     private fun sp(ctx: Context) = ctx.getSharedPreferences("kreska", Context.MODE_PRIVATE)
 
-    override val publishes = "Wybrane liczniki z godzinami kliknięć (np. FF dla Dziennika talerza i Doby)"
+    override val publishes = "Wybrane liczniki z godzinami kliknięć (np. FF) i zdarzenia (np. AFIB) — dla Dziennika talerza i Doby"
     override val sources = listOf(
         SRC_NIGHT_NEW to "Rytm Snu (FF w nocy)",
         SRC_ECG to "Polar EKG (epizody AF)",
@@ -108,6 +108,48 @@ object KreskaExchange : KoofrExchange {
 
     fun setShared(ctx: Context, ids: Set<Long>) = sp(ctx).edit().putStringSet("ex_counters", ids.map { it.toString() }.toSet()).apply()
 
+    fun trackerFile(t: Tracker) = "kreska-z-" + pl.rafal.koofr.KoofrSync.slugify(t.name)
+
+    /** Udostępniane zdarzenia; domyślnie zdarzenie porównywane z migotaniem (AFIB). */
+    fun sharedTrackers(ctx: Context, trackers: List<Tracker>): Set<Long> {
+        val raw = sp(ctx).getStringSet("ex_trackers", null)
+            ?: return setOfNotNull(ComparePrefs.trackerId(ctx, trackers))
+        return raw.mapNotNull { it.toLongOrNull() }.toSet()
+    }
+
+    fun setSharedTrackers(ctx: Context, ids: Set<Long>) =
+        sp(ctx).edit().putStringSet("ex_trackers", ids.map { it.toString() }.toSet()).apply()
+
+    /**
+     * Zdarzenie jako plik „wymiana-zdarzen” (źródło "kreska", "counter" = nazwa zdarzenia):
+     * events = aktywne odcinki (bez pauz, type "session"), day_totals = liczba zdarzeń w dniu startu.
+     */
+    fun buildTracker(t: Tracker): ByteArray {
+        val now = System.currentTimeMillis()
+        val sessions = Repo.allSessions(t.id).sortedBy { it.start }
+        val pauses = Repo.pausesFor(sessions.map { it.id })
+        val events = org.json.JSONArray()
+        val perDay = sortedMapOf<String, Int>()
+        for (s in sessions) {
+            val active = Spans.subtract(listOf(Span(s.start, s.end ?: now)),
+                Spans.union(pauses[s.id].orEmpty().map { Span(it.start, it.end ?: now) }))
+            active.forEachIndexed { i, a ->
+                events.put(JSONObject().put("id", "t${s.id}-$i").put("type", "session").put("start", a.start).put("end", a.end))
+            }
+            val d = Dates.keyOf(s.start)
+            perDay[d] = (perDay[d] ?: 0) + 1
+        }
+        val days = org.json.JSONArray()
+        perDay.forEach { (d, n) -> days.put(JSONObject().put("date", d).put("total", n)) }
+        val windows = org.json.JSONArray()
+        sessions.firstOrNull()?.let { windows.put(JSONObject().put("start", Dates.startOf(Dates.zdt(it.start).toLocalDate())).put("end", now)) }
+        return JSONObject()
+            .put("format", "wymiana-zdarzen").put("version", 1).put("source", "kreska").put("exported_at", now)
+            .put("counter", t.name).put("kind", "tracker")
+            .put("windows", windows).put("events", events).put("day_totals", days)
+            .toString().toByteArray(Charsets.UTF_8)
+    }
+
     override suspend fun export(ctx: Context): Map<String, ByteArray?> {
         val counters = Repo.counters()
         val on = shared(ctx, counters)
@@ -116,6 +158,9 @@ object KreskaExchange : KoofrExchange {
         for (c in counters) {
             if (c.id in on) out[fileName(c)] = KreskaExport.build(c).json.toByteArray(Charsets.UTF_8)
         }
+        val trackers = Repo.trackers()
+        val onT = sharedTrackers(ctx, trackers)
+        for (t in trackers) if (t.id in onT) out[trackerFile(t)] = buildTracker(t)
         // wcześniej udostępniane, a teraz odznaczone lub usunięte — skasować z Koofr
         for (n in prev) if (n !in out) out[n] = null
         sp(ctx).edit().putStringSet("ex_published", out.filterValues { it != null }.keys).apply()
@@ -130,9 +175,26 @@ object KreskaExchange : KoofrExchange {
     override fun ExtraSettings() {
         val ctx = LocalContext.current
         val counters = remember { Repo.counters() }
+        val trackers = remember { Repo.trackers() }
         var on by remember { mutableStateOf(shared(ctx, counters)) }
-        if (counters.isEmpty()) return
+        var onT by remember { mutableStateOf(sharedTrackers(ctx, trackers)) }
         Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp)) {
+            if (trackers.isNotEmpty()) {
+                Text("Udostępniane zdarzenia", style = MaterialTheme.typography.labelLarge)
+                trackers.forEach { t ->
+                    Row(Modifier.fillMaxWidth().clickable {
+                        onT = if (t.id in onT) onT - t.id else onT + t.id
+                        setSharedTrackers(ctx, onT)
+                    }, verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = t.id in onT, onCheckedChange = { v ->
+                            onT = if (v) onT + t.id else onT - t.id
+                            setSharedTrackers(ctx, onT)
+                        })
+                        Text(t.name)
+                    }
+                }
+            }
+            if (counters.isEmpty()) return@Column
             Text("Udostępniane liczniki", style = MaterialTheme.typography.labelLarge)
             counters.forEach { c ->
                 Row(Modifier.fillMaxWidth().clickable {

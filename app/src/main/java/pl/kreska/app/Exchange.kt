@@ -205,3 +205,52 @@ object KreskaExport {
         return Result(j.toString(), n, dayArr.length())
     }
 }
+
+/* ---------- AFIB ↔ epizody z Polar EKG przy pojedynczych wpisach ---------- */
+
+/**
+ * Ocena każdego wpisu zdarzenia AFIB na podstawie zaimportowanych epizodów z Polar EKG:
+ * „EKG: AF 22:10–22:40”, „EKG: bez AF” (gdy w tym czasie nagrywano) albo brak oceny.
+ */
+object AfEcg {
+    data class Episode(val span: Span, val felt: Boolean)
+
+    class Data(val ecg: List<Span>, val windows: List<Span>) {
+        val any get() = ecg.isNotEmpty() || windows.isNotEmpty()
+    }
+
+    fun load(): Data = Data(
+        Spans.union(Repo.extEvents(SRC_ECG, "af").mapNotNull { e -> e.end?.let { Span(e.start, it) } }),
+        Spans.union(Repo.extWindows(SRC_ECG)),
+    )
+
+    /** Czy to zdarzenie jest tym porównywanym z migotaniem z EKG (ustawienia porównania). */
+    fun isAfTracker(ctx: android.content.Context, trackerId: Long, trackers: List<Tracker>): Boolean =
+        ComparePrefs.trackerId(ctx, trackers) == trackerId
+
+    private fun active(s: Session, pauses: List<Pause>, now: Long): List<Span> =
+        Spans.subtract(listOf(Span(s.start, s.end ?: now)), Spans.union(pauses.map { Span(it.start, it.end ?: now) }))
+
+    fun verdict(d: Data, s: Session, pauses: List<Pause>, now: Long): String? {
+        val a = active(s, pauses, now)
+        val hit = Spans.intersect(a, d.ecg)
+        if (hit.isNotEmpty()) {
+            // całe epizody, które dotknęły wpisu (EKG mogło zacząć wcześniej)
+            val eps = d.ecg.filter { ep -> hit.any { it.start < ep.end && it.end > ep.start } }
+            val from = eps.minOf { it.start }
+            val to = eps.maxOf { it.end }
+            return "EKG: AF ${Dates.hm(from)}–${Dates.hm(to)}" + if (eps.size > 1) " (${eps.size} epizody)" else ""
+        }
+        val rec = Spans.total(Spans.intersect(a, d.windows))
+        if (rec > 0) return "EKG: bez AF (nagrywano ${Dates.dur(rec)})"
+        return null
+    }
+
+    /** Epizody z EKG w zakresie z informacją, czy pokrywają się z wpisem AFIB. */
+    fun episodes(d: Data, sessions: List<Session>, pauses: Map<Long, List<Pause>>, range: Span, now: Long): List<Episode> {
+        val felt = Spans.union(sessions.flatMap { active(it, pauses[it.id].orEmpty(), now) })
+        return d.ecg.filter { it.end > range.start && it.start < range.end }
+            .map { ep -> Episode(ep, Spans.intersect(listOf(ep), felt).isNotEmpty()) }
+            .sortedByDescending { it.span.start }
+    }
+}

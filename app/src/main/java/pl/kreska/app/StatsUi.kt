@@ -30,6 +30,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -402,9 +403,38 @@ fun TrackerDetail(
     val now = System.currentTimeMillis()
     val fm: (Float) -> String = { Stats.minutesLabel(it) }
     val fc: (Float) -> String = { Num.fmt(it) }
+    val ctx = LocalContext.current
+    // zdarzenie porównywane z migotaniem z Polar EKG: epizody z EKG obok wpisów
+    val afData = remember(v, t.id) {
+        if (AfEcg.isAfTracker(ctx, t.id, Repo.trackers())) AfEcg.load().takeIf { it.any } else null
+    }
+    val afEpisodes = remember(afData, st) {
+        afData?.let {
+            AfEcg.episodes(it, st.sessions, st.pauses, Span(Dates.startOf(days.first()), Dates.startOf(days.last().plusDays(1))), now)
+        }
+    }
 
     LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { DetailHeader("Zdarzenie", t.name, col, range, onRange, onBack) }
+
+        if (afEpisodes != null) item {
+            StatSection(
+                "Epizody z Polar EKG (${afEpisodes.size})",
+                "Odczute = pokrywa się z Twoim wpisem. EKG wie tylko o czasie nagrywania.",
+                importedFrom(SRC_ECG),
+            ) {
+                if (afEpisodes.isEmpty()) {
+                    Text("Brak migotania w EKG w tym okresie.", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                afEpisodes.take(60).forEach { ep ->
+                    InfoLine(
+                        "${Dates.dayOf(ep.span.start)}, ${Dates.hm(ep.span.start)}–${Dates.hm(ep.span.end)}",
+                        Dates.dur(ep.span.ms) + if (ep.felt) " · odczuty" else " · bez wpisu",
+                    )
+                }
+            }
+        }
 
         item {
             StatSection("Podsumowanie", "Czasy bez pauz. " + Stats.basisNote(st.fullDays, st.since, st.trimmed, st.trendTotal != null)) {
@@ -498,7 +528,8 @@ fun TrackerDetail(
                 Box {
                     Column {
                         st.sessions.take(150).forEach { s ->
-                            SessionRow(s, t, now, st.activeBySession[s.id], st.pauses[s.id]?.size ?: 0) { onEdit(s) }
+                            val ecg = afData?.let { AfEcg.verdict(it, s, st.pauses[s.id].orEmpty(), now) }
+                            SessionRow(s, t, now, st.activeBySession[s.id], st.pauses[s.id]?.size ?: 0, ecg) { onEdit(s) }
                         }
                     }
                 }

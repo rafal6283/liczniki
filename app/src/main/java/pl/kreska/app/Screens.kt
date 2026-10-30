@@ -254,6 +254,8 @@ fun EventsScreen(v: Long) {
     val recent = remember(v) { Repo.recentSessions(12) }
     val pauses = remember(v) { Repo.pausesFor((running.values.map { it.id } + recent.map { it.id }).toSet()) }
     val byId = trackers.associateBy { it.id }
+    val ctx = LocalContext.current
+    val afData = remember(v) { AfEcg.load() }
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     val hasRunning = running.isNotEmpty()
     LaunchedEffect(hasRunning) {
@@ -298,7 +300,8 @@ fun EventsScreen(v: Long) {
             }
             items(recent, key = { "s${it.id}" }) { s ->
                 val ps = pauses[s.id] ?: emptyList()
-                SessionRow(s, byId[s.trackerId], now, Stats.activeMs(s, ps, now), ps.size) { sessionEdit = SessionEdit(s, s.trackerId) }
+                val ecg = if (afData.any && AfEcg.isAfTracker(ctx, s.trackerId, trackers)) AfEcg.verdict(afData, s, ps, now) else null
+                SessionRow(s, byId[s.trackerId], now, Stats.activeMs(s, ps, now), ps.size, ecg) { sessionEdit = SessionEdit(s, s.trackerId) }
             }
         }
     }
@@ -382,7 +385,7 @@ fun TrackerCard(t: Tracker, v: Long, onEdit: () -> Unit, onAdd: () -> Unit) {
 }
 
 @Composable
-fun SessionRow(s: Session, t: Tracker?, now: Long, activeMs: Long?, pauseCount: Int, onEdit: () -> Unit) {
+fun SessionRow(s: Session, t: Tracker?, now: Long, activeMs: Long?, pauseCount: Int, ecg: String? = null, onEdit: () -> Unit) {
     val end = s.end
     val active = activeMs ?: ((end ?: now) - s.start)
     Column {
@@ -401,6 +404,7 @@ fun SessionRow(s: Session, t: Tracker?, now: Long, activeMs: Long?, pauseCount: 
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 if (s.note.isNotBlank()) Text(s.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (ecg != null) ImportedTag(ecg, Modifier.padding(top = 3.dp))
             }
             Text(
                 if (end != null) Dates.dur(active) else "trwa ${Dates.dur(active)}",
