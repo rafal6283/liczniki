@@ -1,4 +1,5 @@
 import CryptoKit
+import Security
 import Foundation
 
 /// Kopia i wymiana przez rodzinne konto Koofr — wersja Swift, zgodna bajt w bajt z pakietem
