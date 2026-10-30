@@ -59,7 +59,7 @@ enum LiveActivityManager {
         var keep = Set<Int64>()
         let enabled = ActivityAuthorizationInfo().areActivitiesEnabled
         for s in running {
-            guard let t = trackers[s.trackerId] else { continue }
+            guard let t = trackers[s.trackerId], t.notify else { continue }
             keep.insert(t.id)
             let content = ActivityContent(state: state(for: s, tracker: t), staleDate: nil)
             if let a = Activity<TrackerActivityAttributes>.activities.first(where: { $0.attributes.trackerId == t.id }) {

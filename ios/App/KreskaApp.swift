@@ -91,6 +91,7 @@ struct ContentView: View {
             case .active:
                 // dane mogły się zmienić z widżetu albo minęła północ
                 store.bump()
+                Task { await KreskaCloud.shared.autoRun() }
                 LiveActivityManager.sync()
                 Notify.refreshGoalReminders()
                 Prefs.touch()

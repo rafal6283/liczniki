@@ -426,7 +426,8 @@ struct TrackerDetailView: View {
                         Text("Brak wpisów w tym okresie.").font(.caption).foregroundStyle(.secondary)
                     }
                     ForEach(Array(st.sessions.prefix(150))) { s in
-                        SessionRow(s: s, tracker: tracker, pauses: st.pauses[s.id] ?? []) {
+                        SessionRow(s: s, tracker: tracker, pauses: st.pauses[s.id] ?? [],
+                                   ecg: AfLink.afTrackerId(Repo.trackers()) == s.trackerId ? AfLink.verdict(AfLink.load(), s, st.pauses[s.id] ?? []) : nil) {
                             sessionEdit = SessionEditItem(session: s, trackerId: tracker.id)
                         }
                         Divider()

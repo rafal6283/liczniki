@@ -39,6 +39,12 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    NavigationLink("Kopia i wymiana (Koofr)") { KoofrView() }
+                } footer: {
+                    Text("Szyfrowana kopia na rodzinnym koncie Koofr i dane z Rytmu Snu oraz Polar EKG.")
+                }
+
+                Section {
                     LabeledContent("Powiadomienia", value: notifStatus)
                     Button("Ustawienia systemowe aplikacji") {
                         if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }

@@ -19,6 +19,11 @@ jobs:
         run: |
           ls -d /Applications/Xcode_16*.app || true
           xcodebuild -version
+      - name: Zgodność szyfrowania Koofr (Swift ↔ Dart ↔ Kotlin)
+        working-directory: ios
+        run: |
+          swiftc -parse-as-library -O -o /tmp/vectors ci/VectorsMain.swift App/Koofr/KsCrypto.swift
+          /tmp/vectors ci/vectors.json
       - name: XcodeGen
         run: brew install xcodegen
       - name: Projekt

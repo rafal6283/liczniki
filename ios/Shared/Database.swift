@@ -26,8 +26,14 @@ final class SQL {
     private var db: OpaquePointer?
     private let lock = NSRecursiveLock()
 
+    static var fileURL: URL { AppGroup.containerURL.appendingPathComponent("kreska.sqlite") }
+
     private init() {
-        let url = AppGroup.containerURL.appendingPathComponent("kreska.sqlite")
+        open()
+    }
+
+    private func open() {
+        let url = SQL.fileURL
         let flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX
         if sqlite3_open_v2(url.path, &db, flags, nil) != SQLITE_OK {
             NSLog("Kreska: nie można otworzyć bazy \(url.path)")
@@ -35,6 +41,31 @@ final class SQL {
         sqlite3_busy_timeout(db, 4000)
         run("PRAGMA journal_mode=WAL")
         migrate()
+    }
+
+    /// Spójna kopia bazy (do kopii zapasowej).
+    func snapshot() throws -> Data {
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("kreska-kopia.sqlite")
+        try? FileManager.default.removeItem(at: tmp)
+        run("VACUUM INTO ?", [tmp.path])
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        return try Data(contentsOf: tmp)
+    }
+
+    /// Podmiana całej bazy (przywracanie kopii). Obecna zostaje obok jako zapas.
+    func replace(with data: Data) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        sqlite3_close(db)
+        db = nil
+        let url = SQL.fileURL
+        let fm = FileManager.default
+        let backup = url.appendingPathExtension("przed-przywroceniem")
+        try? fm.removeItem(at: backup)
+        try? fm.copyItem(at: url, to: backup)
+        for suffix in ["-wal", "-shm"] { try? fm.removeItem(at: URL(fileURLWithPath: url.path + suffix)) }
+        try data.write(to: url, options: .atomic)
+        open()
     }
 
     private func bind(_ st: OpaquePointer, _ args: [Any?]) {

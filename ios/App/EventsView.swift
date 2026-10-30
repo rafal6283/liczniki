@@ -19,6 +19,8 @@ struct EventsView: View {
         let recent = Repo.recentSessions(12)
         let pauses = Repo.pausesFor(Array(Set(running.values.map { $0.id } + recent.map { $0.id })))
         let byId = Dictionary(uniqueKeysWithValues: trackers.map { ($0.id, $0) })
+        let afId = AfLink.afTrackerId(trackers)
+        let af = afId == nil ? nil : AfLink.load()
         NavigationStack {
             ScrollView {
                 VStack(spacing: 12) {
@@ -67,7 +69,8 @@ struct EventsView: View {
                         Card {
                             Text("Ostatnie wpisy").font(.headline)
                             ForEach(recent) { s in
-                                SessionRow(s: s, tracker: byId[s.trackerId], pauses: pauses[s.id] ?? []) {
+                                SessionRow(s: s, tracker: byId[s.trackerId], pauses: pauses[s.id] ?? [],
+                                           ecg: (af?.any == true && s.trackerId == afId) ? AfLink.verdict(af!, s, pauses[s.id] ?? []) : nil) {
                                     sessionEdit = SessionEditItem(session: s, trackerId: s.trackerId)
                                 }
                                 if s.id != recent.last?.id { Divider() }
@@ -188,6 +191,7 @@ struct SessionRow: View {
     let s: Session
     let tracker: Tracker?
     let pauses: [Pause]
+    var ecg: String? = nil
     let onEdit: () -> Void
 
     var body: some View {
@@ -203,6 +207,7 @@ struct SessionRow: View {
                     if !s.note.isEmpty {
                         Text(s.note).font(.caption).foregroundStyle(.secondary)
                     }
+                    if let ecg { ImportedTag(text: ecg) }
                 }
                 Spacer()
                 Text(s.end != nil ? Fmt.dur(active) : "trwa \(Fmt.dur(active))")
@@ -241,7 +246,7 @@ struct TrackerForm: View {
                 Section { TextField("Nazwa, np. Praca, Sen", text: $name) }
                 Section("Kolor") { ColorChooser(selected: $color) }
                 Section {
-                    Toggle("Pokaż w widżecie „Zdarzenia”", isOn: $notify)
+                    Toggle("Pokaż w widżecie i na ekranie blokady", isOn: $notify)
                 } footer: {
                     Text("Trwające zdarzenie zawsze ma stoper na ekranie blokady z przyciskami Pauza i Stop.")
                 }
@@ -413,5 +418,20 @@ private struct ResumeRow: View {
             DatePicker("Zakończ o", selection: $endAt, in: s.start.date...Date())
             Button("Zakończ o wybranej godzinie") { Repo.stopSession(s.id, at: endAt.ms) }
         }
+    }
+}
+
+/// Delikatne wyróżnienie danych z innych aplikacji (np. „EKG: AF 22:10–22:40” z Polar EKG).
+struct ImportedTag: View {
+    let text: String
+    var body: some View {
+        HStack(spacing: 3) {
+            Image(systemName: "link").font(.caption2)
+            Text(text).font(.caption2)
+        }
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 2)
+        .overlay(Capsule().stroke(Color(.separator)))
     }
 }
