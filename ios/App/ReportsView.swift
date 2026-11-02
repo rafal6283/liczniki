@@ -87,6 +87,7 @@ struct ReportsView: View {
                     }
                     ForEach(counters) { c in CounterReportCard(c: c, days: days, range: $range) }
                     ForEach(trackers) { t in TrackerReportCard(t: t, days: days, range: $range) }
+                    CompareCard(days: days)
                     if !counters.isEmpty || !trackers.isEmpty {
                         ShareLink(item: CSVExport(days: range), preview: SharePreview("Kreska — eksport CSV")) {
                             Label("Eksportuj CSV (\(range == 365 ? "rok" : "\(range) dni"))", systemImage: "square.and.arrow.up")
@@ -446,5 +447,80 @@ struct TrackerDetailView: View {
         var p = Array(repeating: 0.0, count: 4)
         for (h, m) in hours.enumerated() { p[Stats.partOfDay(h)] += m }
         return p
+    }
+}
+
+/// Porównanie z Rytmem Snu (FF w nocy) i Polar EKG (AFIB ↔ migotanie) – jak karta na Androidzie.
+struct CompareCard: View {
+    let days: [Date]
+    @AppStorage("cmp_tol", store: Prefs.d) private var tol = 60
+    @AppStorage("cmp_counter", store: Prefs.d) private var counterSel = 0
+
+    private func pct(_ v: Double?) -> String { v.map { "\(Int(($0 * 100).rounded()))%" } ?? "–" }
+    private func dur(_ ms: Int64) -> String { ms > 0 ? Fmt.dur(ms) : "–" }
+
+    var body: some View {
+        let cs = Repo.counters(), ts = Repo.trackers()
+        let from = days.first ?? Fmt.today, to = days.last ?? Fmt.today
+        let cid = FartLink.counterId(cs)
+        let ff = cid.flatMap { FartLink.compare(counterId: $0, from: from, to: to) }
+        let tid = AfLink.afTrackerId(ts)
+        let af = tid.flatMap { AfLink.summary(trackerId: $0, from: from, to: to) }
+        if ff != nil || af != nil {
+            Card {
+                Eyebrow(text: "Porównanie z aplikacjami")
+                if let f = ff {
+                    Text("\(cs.first { $0.id == cid }?.name ?? "FF") ↔ Rytm Snu").font(.headline)
+                    StatsGrid(items: [
+                        StatItem("\(f.combined)", "łącznie (bez podwójnego liczenia)"),
+                        StatItem("\(f.matched)", "wspólne (±\(tol) s)"),
+                        StatItem("\(f.detected - f.matched)", "tylko detektor w nocy"),
+                        StatItem("\(f.manual - f.matched)", "tylko Twój wpis w nocy"),
+                        StatItem("\(f.manualOutside)", "wpisy w dzień (poza nocami)"),
+                        StatItem("\(pct(f.caughtShare)) / \(pct(f.confirmedShare))", "detektor złapał / wykryć potwierdzonych"),
+                    ])
+                    let nights = f.windows.filter { $0.manual + $0.detected > 0 }.suffix(7)
+                    if !nights.isEmpty {
+                        VStack(alignment: .leading, spacing: 4) {
+                            ForEach(Array(nights.enumerated()), id: \.offset) { _, w in
+                                HStack {
+                                    Text("Noc \(Fmt.day(w.span.start.date))").font(.caption)
+                                    Spacer()
+                                    Text("Ty \(w.manual) · detektor \(w.detected) · wspólne \(w.matched)")
+                                        .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+                    HStack {
+                        if cs.count > 1 {
+                            Picker("Licznik", selection: Binding(get: { Int(cid ?? 0) }, set: { counterSel = $0 })) {
+                                ForEach(cs) { c in Text(c.name).tag(Int(c.id)) }
+                            }
+                        }
+                        Picker("Tolerancja", selection: $tol) {
+                            ForEach([30, 60, 120, 300], id: \.self) { Text("±\($0) s").tag($0) }
+                        }
+                    }
+                    .pickerStyle(.menu).font(.caption)
+                    if af != nil { Divider() }
+                }
+                if let a = af {
+                    Text("\(ts.first { $0.id == tid }?.name ?? "AFIB") ↔ migotanie w Polar EKG").font(.headline)
+                    StatsGrid(items: [
+                        StatItem(dur(a.ecgMs + a.kreskaOutsideMs), "łącznie (EKG + Kreska bez zapisu)"),
+                        StatItem(dur(a.ecgMs) + (a.coverageMs > 0 ? " · \(pct(Double(a.ecgMs) / Double(a.coverageMs)))" : ""), "AF w EKG · obciążenie"),
+                        StatItem(dur(a.bothMs), "wspólnie EKG i Kreska"),
+                        StatItem(dur(a.ecgMs - a.bothMs), "tylko EKG (bez odczucia)"),
+                        StatItem(dur(a.kreskaOutsideMs), "wpis w Kresce bez zapisu EKG"),
+                        StatItem("\(a.felt)/\(a.ecgEpisodes)", "epizody EKG odczute"),
+                    ])
+                }
+                Text([(ExtStore.night, "Rytm Snu"), (ExtStore.ecg, "Polar EKG")].compactMap { s, n in
+                    ExtStore.exportedAt(s).map { "\(n): eksport \(Fmt.dateTime($0))" }
+                }.joined(separator: "\n"))
+                .font(.caption).foregroundStyle(.secondary)
+            }
+        }
     }
 }

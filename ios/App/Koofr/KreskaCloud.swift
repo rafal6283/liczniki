@@ -1,4 +1,5 @@
 import Foundation
+import Network
 
 /// Kopia Kreski (iOS) i wymiana danych z innymi aplikacjami przez rodzinne konto Koofr.
 /// Kopie z iPhone'a trzymane są osobno od kopii z Androida (inny folder: „kreska-ios”).
@@ -51,12 +52,38 @@ final class KreskaCloud: ObservableObject {
     }
     func setSharedTrackers(_ s: Set<Int64>) { d.set(Array(s), forKey: "ks_ex_trackers"); changed() }
 
+    /// Praca automatyczna tylko przez Wi-Fi (jak na Androidzie; domyślnie włączone).
+    var wifiOnly: Bool {
+        get { d.object(forKey: "ks_wifi_only") == nil ? true : d.bool(forKey: "ks_wifi_only") }
+        set { d.set(newValue, forKey: "ks_wifi_only"); changed() }
+    }
+
+    /// Czy obecne połączenie nie jest komórkowe ani oznaczone jako drogie (hotspot, tryb niskiego zużycia).
+    static func onWifi() async -> Bool {
+        await withCheckedContinuation { (c: CheckedContinuation<Bool, Never>) in
+            let m = NWPathMonitor()
+            let q = DispatchQueue(label: "kreska.net")
+            final class Once: @unchecked Sendable { var done = false }
+            let once = Once()
+            m.pathUpdateHandler = { p in
+                q.async {
+                    guard !once.done else { return }
+                    once.done = true
+                    m.cancel()
+                    c.resume(returning: p.status == .satisfied && !p.isExpensive && !p.isConstrained && !p.usesInterfaceType(.cellular))
+                }
+            }
+            m.start(queue: q)
+        }
+    }
+
     // ---------------------------------------------------------------- automatyka
 
     /// Po otwarciu aplikacji: wymiana co najmniej co 15 min, kopia raz na dobę (jeśli włączona).
     func autoRun() async {
         load()
         guard sync.ready, !busy else { return }
+        if wifiOnly, !(await KreskaCloud.onWifi()) { return }
         do {
             if exchangeOn, lastExchangeRun.map({ Date().timeIntervalSince($0) > 15 * 60 }) ?? true {
                 _ = try await exchangeNow()
@@ -238,6 +265,22 @@ enum ExtStore {
                                             [ecg]) { Interval(start: $0.i64(0), end: $0.i64(1)) })
     }
 
+    static func nightWindows() -> [Interval] {
+        ensure()
+        return Spans.union(SQL.shared.query("SELECT start, end_ts FROM ext_windows WHERE source=?", [night]) { Interval(start: $0.i64(0), end: $0.i64(1)) })
+    }
+
+    /// Wiatry wykryte przez Rytm Snu (bez odrzuconych ✗).
+    static func nightFarts() -> [Int64] {
+        ensure()
+        return SQL.shared.query("SELECT start FROM ext_events WHERE source=? AND type='fart' AND (verified IS NULL OR verified=1)", [night]) { $0.i64(0) }
+    }
+
+    static func exportedAt(_ source: String) -> Int64? {
+        ensure()
+        return SQL.shared.query("SELECT exported_at FROM ext_meta WHERE source=?", [source]) { $0.i64(0) }.first
+    }
+
     static func ecgWindows() -> [Interval] {
         ensure()
         return Spans.union(SQL.shared.query("SELECT start, end_ts FROM ext_windows WHERE source=?", [ecg]) { Interval(start: $0.i64(0), end: $0.i64(1)) })
@@ -292,5 +335,103 @@ enum AfLink {
         }
         let rec = Spans.total(Spans.intersect(a, d.windows))
         return rec > 0 ? "EKG: bez AF (nagrywano \(Fmt.dur(rec)))" : nil
+    }
+}
+
+/// FF w Kresce ↔ wiatry wykryte w nocy przez Rytm Snu (jak `FartMerge` na Androidzie).
+enum FartLink {
+    struct Window { let span: Interval; let manual: Int; let detected: Int; let matched: Int }
+
+    struct Result {
+        let windows: [Window]
+        let manualOutside: Int
+        var manual: Int { windows.reduce(0) { $0 + $1.manual } }
+        var detected: Int { windows.reduce(0) { $0 + $1.detected } }
+        var matched: Int { windows.reduce(0) { $0 + $1.matched } }
+        /// Najlepsze oszacowanie – suma bez podwójnego liczenia.
+        var combined: Int { manual + detected - matched + manualOutside }
+        var caughtShare: Double? { manual > 0 ? Double(matched) / Double(manual) : nil }
+        var confirmedShare: Double? { detected > 0 ? Double(matched) / Double(detected) : nil }
+    }
+
+    /// Licznik porównywany z Rytmem Snu: wybrany w ustawieniach albo pierwszy o nazwie „FF”.
+    static func counterId(_ cs: [Counter]) -> Int64? {
+        let saved = Int64(Prefs.d.integer(forKey: "cmp_counter"))
+        if saved != 0, cs.contains(where: { $0.id == saved }) { return saved }
+        return cs.first { $0.name.trimmingCharacters(in: .whitespaces).caseInsensitiveCompare("FF") == .orderedSame }?.id
+    }
+
+    static var tolSec: Int {
+        let v = Prefs.d.integer(forKey: "cmp_tol")
+        return v > 0 ? v : 60
+    }
+
+    static func compare(counterId: Int64, from: Date, to: Date) -> Result? {
+        let windows = ExtStore.nightWindows()
+        if windows.isEmpty { return nil }
+        let start = Fmt.cal.startOfDay(for: from).ms
+        let end = Fmt.cal.startOfDay(for: Fmt.addDays(to, 1)).ms
+        // kliknięcia z godziną (korekty dnia bez godziny pomijamy)
+        var manual: [Int64] = []
+        for t in Repo.taps(counterId, from: Fmt.key(Fmt.addDays(from, -1)), to: Fmt.key(Fmt.addDays(to, 1)))
+            where !t.manual && t.amount > 0 && t.ts >= start && t.ts < end {
+            manual.append(contentsOf: Array(repeating: t.ts, count: t.amount))
+        }
+        manual.sort()
+        let det = ExtStore.nightFarts().filter { $0 >= start && $0 < end }.sorted()
+        let ws = Spans.intersect(windows, [Interval(start: start, end: end)])
+        let tol = Int64(tolSec) * 1000
+        var out: [Window] = []
+        var inside = 0
+        for w in ws {
+            let m = manual.filter { $0 >= w.start && $0 < w.end }
+            let d = det.filter { $0 >= w.start && $0 < w.end }
+            inside += m.count
+            out.append(Window(span: w, manual: m.count, detected: d.count, matched: matchCount(m, d, tol)))
+        }
+        return Result(windows: out, manualOutside: manual.count - inside)
+    }
+
+    /// Dopasowanie 1:1 – najpierw najbliższe pary.
+    static func matchCount(_ a: [Int64], _ b: [Int64], _ tol: Int64) -> Int {
+        if a.isEmpty || b.isEmpty { return 0 }
+        var pairs: [(Int64, Int, Int)] = []
+        var s = 0
+        for i in a.indices {
+            while s < b.count && b[s] < a[i] - tol { s += 1 }
+            var j = s
+            while j < b.count && b[j] <= a[i] + tol { pairs.append((abs(a[i] - b[j]), i, j)); j += 1 }
+        }
+        pairs.sort { $0.0 < $1.0 }
+        var ua = [Bool](repeating: false, count: a.count), ub = [Bool](repeating: false, count: b.count)
+        var n = 0
+        for (_, i, j) in pairs where !ua[i] && !ub[j] { ua[i] = true; ub[j] = true; n += 1 }
+        return n
+    }
+}
+
+extension AfLink {
+    /// AFIB w Kresce ↔ migotanie w EKG w okresie raportu.
+    struct Summary {
+        let ecgMs: Int64, kreskaMs: Int64, bothMs: Int64, coverageMs: Int64
+        let kreskaOutsideMs: Int64, ecgEpisodes: Int, felt: Int
+    }
+
+    static func summary(trackerId: Int64, from: Date, to: Date) -> Summary? {
+        let d = load()
+        if !d.any { return nil }
+        let r = [Interval(start: Fmt.cal.startOfDay(for: from).ms, end: Fmt.cal.startOfDay(for: Fmt.addDays(to, 1)).ms)]
+        let now = nowMs()
+        let sessions = Repo.sessions(trackerId, fromMs: r[0].start - 86_400_000 * 2)
+        let pauses = Repo.pausesFor(sessions.map { $0.id })
+        let kreska = Spans.intersect(sessions.flatMap { Timing.activeIntervals($0, pauses[$0.id] ?? [], now: now) }, r)
+        let ecg = Spans.intersect(d.ecg, r), win = Spans.intersect(d.windows, r)
+        let both = Spans.intersect(kreska, ecg)
+        let eps = d.ecg.filter { $0.end > r[0].start && $0.start < r[0].end }
+        let felt = eps.filter { e in kreska.contains { $0.start < e.end && $0.end > e.start } }.count
+        let kInWin = Spans.total(Spans.intersect(kreska, win))
+        return Summary(ecgMs: Spans.total(ecg), kreskaMs: Spans.total(kreska), bothMs: Spans.total(both),
+                       coverageMs: Spans.total(win), kreskaOutsideMs: Spans.total(kreska) - kInWin,
+                       ecgEpisodes: eps.count, felt: felt)
     }
 }

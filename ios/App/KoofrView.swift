@@ -169,6 +169,7 @@ struct KoofrView: View {
         }
         Section {
             Toggle("Automatyczna kopia", isOn: Binding(get: { sync.backupEnabled }, set: { sync.backupEnabled = $0; cloud.changed() }))
+            Toggle("Tylko przez Wi-Fi", isOn: Binding(get: { cloud.wifiOnly }, set: { cloud.wifiOnly = $0 }))
             Button("Zrób kopię teraz") { act("Kopia zapisana na Koofr") { try await cloud.backupNow() } }
             Button("Przywróć z kopii") {
                 act(nil) {
@@ -180,7 +181,7 @@ struct KoofrView: View {
             Text("Kopia zapasowa")
         } footer: {
             Text((sync.lastBackup.map { "Ostatnia: \(Fmt.dateTime($0.ms)). " } ?? "")
-                 + "Raz na dobę przy otwarciu aplikacji. Szyfrowana na telefonie. Kopie z iPhone'a są osobno od kopii z Androida.")
+                 + "Raz na dobę przy otwarciu aplikacji\(cloud.wifiOnly ? " (tylko przez Wi-Fi; ręcznie zawsze)" : ""). Szyfrowana na telefonie. Kopie z iPhone'a są osobno od kopii z Androida.")
         }
         exchangeSection
     }
