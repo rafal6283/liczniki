@@ -48,7 +48,7 @@ fun niceMax(v: Float): Float {
  * Słupki wyrastają kaskadą, skala osi płynnie się dopasowuje, a dotknięcie lub przeciągnięcie palcem pokazuje wartość dnia.
  */
 @Composable
-fun BarChart(days: List<LocalDate>, values: List<Float>, color: Color, format: (Float) -> String) {
+fun BarChart(days: List<LocalDate>, values: List<Float>, color: Color, format: (Float) -> String, extras: List<BarExtra> = emptyList()) {
     val measurer = rememberTextMeasurer()
     val labelStyle = TextStyle(fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant)
     val tipStyle = TextStyle(fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.inverseOnSurface)
@@ -56,7 +56,10 @@ fun BarChart(days: List<LocalDate>, values: List<Float>, color: Color, format: (
     val grid = MaterialTheme.colorScheme.outlineVariant
     val today = LocalDate.now()
     val anim = animatedSeries(values)
-    val yMax by animateFloatAsState(niceMax(values.maxOrNull() ?: 0f), spring(stiffness = Spring.StiffnessLow), label = "yMax")
+    val extraOn = extras.filter { e -> e.values.any { it > 0f } }
+    val extraMax = values.indices.maxOfOrNull { i -> extraOn.sumOf { it.values.getOrElse(i) { 0f }.toDouble() }.toFloat() } ?: 0f
+    val outline = MaterialTheme.colorScheme.surface
+    val yMax by animateFloatAsState(niceMax(maxOf(values.maxOrNull() ?: 0f, extraMax)), spring(stiffness = Spring.StiffnessLow), label = "yMax")
     val sel = rememberSelection(days.firstOrNull() to values.size)
     val left = with(LocalDensity.current) { 46.dp.toPx() }
 
@@ -101,6 +104,25 @@ fun BarChart(days: List<LocalDate>, values: List<Float>, color: Color, format: (
                     cornerRadius = CornerRadius(radius, radius),
                 )
             }
+            // dane z aplikacji (AF z Polar EKG / Rytmu Snu): wąski słupek na prawej części dnia, z obwódką
+            if (extraOn.isNotEmpty()) {
+                val ew = maxOf(2.dp.toPx(), (bw - gap) * 0.42f)
+                val ex = left + i * bw + gap / 2f + (bw - gap) - ew
+                var acc = 0f
+                for (e in extraOn) {
+                    val v = e.values.getOrElse(i) { 0f } * anim.t
+                    if (v <= 0f) continue
+                    val y1 = top + h - (h * acc / yMax).coerceAtMost(h)
+                    val eh = maxOf(2.dp.toPx(), h * v / yMax).coerceAtMost(y1 - top)
+                    if (e.dashed) {
+                        dashedRect(e.color, Offset(ex, y1 - eh), Size(ew, eh))
+                    } else {
+                        drawRect(e.color, Offset(ex, y1 - eh), Size(ew, eh))
+                        drawRect(outline, Offset(ex, y1 - eh), Size(ew, eh), style = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx()))
+                    }
+                    acc += v
+                }
+            }
             if ((n - 1 - i) % step == 0) {
                 val d = days[i]
                 val label = if (n <= 8) Dates.weekday(d) else "${d.dayOfMonth}.${d.monthValue.toString().padStart(2, '0')}"
@@ -116,7 +138,8 @@ fun BarChart(days: List<LocalDate>, values: List<Float>, color: Color, format: (
             val cx = left + s * bw + bw / 2f
             val barTop = top + h - maxOf(1.5f, h * anim[s] / yMax).coerceAtMost(h)
             tooltip(
-                measurer, "${Dates.weekday(days[s])} ${Dates.day(days[s])} · ${format(v)}",
+                measurer, "${Dates.weekday(days[s])} ${Dates.day(days[s])} · ${format(v)}" +
+                    extraOn.filter { it.values.getOrElse(s) { 0f } > 0f }.joinToString("") { " · ${it.label} ${format(it.values[s])}" },
                 cx, if (v > 0f) barTop else top + h, tipStyle, tipBg, sel.alpha.value,
                 guide = grid, guideBottom = top + h,
             )

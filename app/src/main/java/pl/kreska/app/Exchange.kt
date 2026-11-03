@@ -74,9 +74,10 @@ object Exchange {
             ?: throw IllegalArgumentException("Nie udało się otworzyć pliku")
         val x = parse(text)
         Repo.replaceExternal(x)
-        val what = if (x.source == SRC_NIGHT) "nocy: ${x.windows.size}, FF: ${x.events.count { it.verified != false }}"
+        val what = if (x.source == SRC_NIGHT) "nocy: ${x.windows.size}, FF: ${x.events.count { it.type == "fart" && it.verified != false }}"
         else "fragmentów zapisu: ${x.windows.size}, epizodów AF: ${x.events.size}"
-        "Zaimportowano z ${sourceLabel(x.source)} – $what"
+        val afNight = if (x.source == SRC_NIGHT) x.events.count { it.type == "af" } else 0
+        "Zaimportowano z ${sourceLabel(x.source)} – $what" + if (afNight > 0) ", nieregularny rytm: $afNight" else ""
     } catch (e: IllegalArgumentException) {
         e.message ?: "Niepoprawny plik"
     } catch (e: Exception) {
@@ -215,14 +216,20 @@ object KreskaExport {
 object AfEcg {
     data class Episode(val span: Span, val felt: Boolean)
 
-    class Data(val ecg: List<Span>, val windows: List<Span>) {
-        val any get() = ecg.isNotEmpty() || windows.isNotEmpty()
+    /** [night] – nieregularny rytm z opaski zapisany przez Rytm Snu (odstępy RR, w nocy). */
+    class Data(val ecg: List<Span>, val windows: List<Span>, val night: List<Span> = emptyList()) {
+        val any get() = ecg.isNotEmpty() || windows.isNotEmpty() || night.isNotEmpty()
     }
 
     fun load(): Data = Data(
         Spans.union(Repo.extEvents(SRC_ECG, "af").mapNotNull { e -> e.end?.let { Span(e.start, it) } }),
         Spans.union(Repo.extWindows(SRC_ECG)),
+        Spans.union(Repo.extEvents(SRC_NIGHT, "af").mapNotNull { e -> e.end?.let { Span(e.start, it) } }),
     )
+
+    /** Czas trwania wpisów bez pauz, scalony. */
+    fun activeSpans(sessions: List<Session>, pauses: Map<Long, List<Pause>>, now: Long): List<Span> =
+        Spans.union(sessions.flatMap { active(it, pauses[it.id].orEmpty(), now) })
 
     /** Czy to zdarzenie jest tym porównywanym z migotaniem z EKG (ustawienia porównania). */
     fun isAfTracker(ctx: android.content.Context, trackerId: Long, trackers: List<Tracker>): Boolean =

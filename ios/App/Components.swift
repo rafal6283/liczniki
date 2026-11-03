@@ -267,6 +267,7 @@ struct DailyChart: View {
     let days: [Date]
     let values: [Double]
     let color: Color
+    var extras: [BarExtra] = []
     let format: (Double) -> String
 
     @State private var grown = false
@@ -278,7 +279,9 @@ struct DailyChart: View {
     }
 
     var body: some View {
-        let top = niceMax(values.max() ?? 0)
+        let ext = extras.filter { $0.values.contains { $0 > 0 } }
+        let extMax = days.indices.map { i in ext.reduce(0) { $0 + ($1.values.indices.contains(i) ? $1.values[i] : 0) } }.max() ?? 0
+        let top = niceMax(max(values.max() ?? 0, extMax))
         let si = selIndex
         Chart {
             ForEach(days.indices, id: \.self) { i in
@@ -290,12 +293,32 @@ struct DailyChart: View {
                 .foregroundStyle(Fmt.cal.isDateInToday(days[i]) ? color.opacity(0.55) : color)
                 .opacity(si == nil || si == i ? 1 : 0.4)
             }
+            // AF z aplikacji: wąskie słupki na wierzchu, wyraźnym kolorem
+            ForEach(Array(ext.enumerated()), id: \.offset) { k, e in
+                ForEach(days.indices, id: \.self) { i in
+                    let v = e.values.indices.contains(i) ? e.values[i] : 0
+                    if v > 0 {
+                        let base = ext.prefix(k).reduce(0) { $0 + ($1.values.indices.contains(i) ? $1.values[i] : 0) }
+                        BarMark(
+                            x: .value("Dzień", days[i], unit: .day),
+                            yStart: .value("Od", grown ? base : 0),
+                            yEnd: .value("Do", grown ? base + v : 0),
+                            width: .ratio(0.38)
+                        )
+                        .foregroundStyle(e.striped ? e.color.opacity(0.7) : e.color)
+                        .opacity(si == nil || si == i ? 1 : 0.5)
+                    }
+                }
+            }
             if let i = si {
                 RuleMark(x: .value("Dzień", days[i], unit: .day))
                     .foregroundStyle(.secondary.opacity(0.5))
                     .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
                     .annotation(position: .top, spacing: 2, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
-                        ChartTip(title: "\(Fmt.weekday(days[i])) \(Fmt.day(days[i]))", value: format(values[i]))
+                        ChartTip(title: "\(Fmt.weekday(days[i])) \(Fmt.day(days[i]))",
+                                 value: format(values[i]) + ext.compactMap { e in
+                                     e.values.indices.contains(i) && e.values[i] > 0 ? " · \(e.label) \(format(e.values[i]))" : nil
+                                 }.joined())
                     }
             }
         }

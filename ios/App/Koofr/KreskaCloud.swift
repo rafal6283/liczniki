@@ -281,6 +281,13 @@ enum ExtStore {
         return SQL.shared.query("SELECT exported_at FROM ext_meta WHERE source=?", [source]) { $0.i64(0) }.first
     }
 
+    /// Nieregularny rytm z opaski zapisany przez Rytm Snu (w nocy).
+    static func nightAf() -> [Interval] {
+        ensure()
+        return Spans.union(SQL.shared.query("SELECT start, end_ts FROM ext_events WHERE source=? AND type='af' AND end_ts IS NOT NULL",
+                                            [night]) { Interval(start: $0.i64(0), end: $0.i64(1)) })
+    }
+
     static func ecgWindows() -> [Interval] {
         ensure()
         return Spans.union(SQL.shared.query("SELECT start, end_ts FROM ext_windows WHERE source=?", [ecg]) { Interval(start: $0.i64(0), end: $0.i64(1)) })
@@ -320,10 +327,19 @@ enum AfLink {
     struct AfData {
         let ecg: [Interval]
         let windows: [Interval]
-        var any: Bool { !ecg.isEmpty || !windows.isEmpty }
+        var night: [Interval] = []
+        var any: Bool { !ecg.isEmpty || !windows.isEmpty || !night.isEmpty }
     }
 
-    static func load() -> AfData { AfData(ecg: ExtStore.ecgEpisodes(), windows: ExtStore.ecgWindows()) }
+    static func load() -> AfData { AfData(ecg: ExtStore.ecgEpisodes(), windows: ExtStore.ecgWindows(), night: ExtStore.nightAf()) }
+
+    /// Minuty z przedziałów w każdym dniu.
+    static func dailyMinutes(_ spans: [Interval], _ days: [Date]) -> [Double] {
+        days.map { d in
+            let r = [Interval(start: Fmt.cal.startOfDay(for: d).ms, end: Fmt.cal.startOfDay(for: Fmt.addDays(d, 1)).ms)]
+            return Double(Spans.total(Spans.intersect(spans, r))) / 60_000
+        }
+    }
 
     static func verdict(_ d: AfData, _ s: Session, _ pauses: [Pause]) -> String? {
         let a = Timing.activeIntervals(s, pauses, now: nowMs())

@@ -417,21 +417,23 @@ fun TrackerDetail(
     LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { DetailHeader("Zdarzenie", t.name, col, range, onRange, onBack) }
 
-        if (afEpisodes != null) item {
+        if (afData != null) item {
+            val range = listOf(Span(Dates.startOf(days.first()), Dates.startOf(days.last().plusDays(1))))
+            val kreska = remember(st, now / 60_000) { Spans.intersect(AfEcg.activeSpans(st.sessions, st.pauses, now), range) }
+            val ecgR = remember(afData, days) { afData.ecg.filter { it.end > range[0].start && it.start < range[0].end } }
+            val nightR = remember(afData, days) { afData.night.filter { it.end > range[0].start && it.start < range[0].end } }
+            val felt = afEpisodes.orEmpty().count { it.felt }
             StatSection(
-                "Epizody z Polar EKG (${afEpisodes.size})",
-                "Odczute = pokrywa się z Twoim wpisem. EKG wie tylko o czasie nagrywania.",
-                importedFrom(SRC_ECG),
+                "Oś czasu migotania",
+                "Wpisy w Kresce obok migotania wykrytego w aplikacjach: Polar EKG (EKG) i Rytm Snu (rytm z opaski w nocy). " +
+                    "Dotknij dnia, żeby zobaczyć godziny i czas trwania.",
+                "z aplikacji",
             ) {
-                if (afEpisodes.isEmpty()) {
-                    Text("Brak migotania w EKG w tym okresie.", style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                afEpisodes.take(60).forEach { ep ->
-                    InfoLine(
-                        "${Dates.dayOf(ep.span.start)}, ${Dates.hm(ep.span.start)}–${Dates.hm(ep.span.end)}",
-                        Dates.dur(ep.span.ms) + if (ep.felt) " · odczuty" else " · bez wpisu",
-                    )
+                AfTimeline(dd, kreska, ecgR, nightR, t.name, col)
+                if (ecgR.isNotEmpty() || nightR.isNotEmpty()) {
+                    Spacer(Modifier.height(10.dp))
+                    if (ecgR.isNotEmpty()) InfoLine("Polar EKG: epizody AF", "${ecgR.size} · ${Dates.dur(Spans.total(Spans.intersect(ecgR, range)))} · odczute $felt")
+                    if (nightR.isNotEmpty()) InfoLine("Rytm Snu: nieregularny rytm", "${nightR.size} · ${Dates.dur(Spans.total(Spans.intersect(nightR, range)))}")
                 }
             }
         }
@@ -469,7 +471,17 @@ fun TrackerDetail(
 
         item {
             StatSection("Czas dzień po dniu") {
-                BarChart(dd, st.dailyMinutes, col, fm)
+                val ecgC = AfColors.ecg()
+                val nightC = AfColors.night()
+                val extras = remember(afData, dd) {
+                    afData?.let { a ->
+                        listOf(BarExtra("EKG", dailyMinutes(a.ecg, dd), ecgC), BarExtra("Rytm Snu", dailyMinutes(a.night, dd), nightC, dashed = true))
+                    }.orEmpty()
+                }
+                BarChart(dd, st.dailyMinutes, col, fm, extras)
+                if (extras.any { e -> e.values.any { it > 0f } }) {
+                    AfLegend(t.name, col, extras[0].values.any { it > 0f }, extras[1].values.any { it > 0f })
+                }
                 if (n >= 28 && st.weeks.size >= 2) {
                     Spacer(Modifier.height(14.dp))
                     Eyebrow("Tydzień po tygodniu (od poniedziałku)")

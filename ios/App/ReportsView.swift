@@ -186,7 +186,12 @@ struct TrackerReportCard: View {
                 StatItem(Stats.hhmm(st.avgStartMin), "średni start"),
                 StatItem("\(st.streakCurrent) d", "obecna seria"),
             ])
-            DailyChart(days: st.days, values: st.dailyMinutes, color: col) { Stats.minutesLabel($0) }
+            let extras = AfLink.extras(trackerId: t.id, days: st.days)
+            DailyChart(days: st.days, values: st.dailyMinutes, color: col, extras: extras) { Stats.minutesLabel($0) }
+            if extras.contains(where: { $0.values.contains { $0 > 0 } }) {
+                AfLegend(trackerName: t.name, trackerColor: col,
+                         ecg: extras[0].values.contains { $0 > 0 }, night: extras[1].values.contains { $0 > 0 })
+            }
             SinceNote(since: st.since, trimmed: st.trimmed)
             NavigationLink {
                 TrackerDetailView(t: t, range: $range)
@@ -383,8 +388,35 @@ struct TrackerDetailView: View {
                     InfoLine(label: "Najdłuższa przerwa", value: st.longestGapMs.map { Fmt.dur($0) } ?? "–")
                 }
 
+                if AfLink.afTrackerId(Repo.trackers()) == tracker.id {
+                    let af = AfLink.load()
+                    if af.any {
+                        let r = [Interval(start: Fmt.cal.startOfDay(for: st.days.first ?? Fmt.today).ms,
+                                          end: Fmt.cal.startOfDay(for: Fmt.addDays(st.days.last ?? Fmt.today, 1)).ms)]
+                        let now = nowMs()
+                        let kreska = Spans.intersect(st.sessions.flatMap { Timing.activeIntervals($0, st.pauses[$0.id] ?? [], now: now) }, r)
+                        let ecg = af.ecg.filter { $0.end > r[0].start && $0.start < r[0].end }
+                        let night = af.night.filter { $0.end > r[0].start && $0.start < r[0].end }
+                        SectionCard("Oś czasu migotania",
+                                    hint: "Wpisy w Kresce obok migotania z aplikacji: Polar EKG (EKG) i Rytm Snu (rytm z opaski w nocy). Dotknij dnia, żeby zobaczyć godziny i czas trwania.") {
+                            AfTimeline(days: st.days, kreska: kreska, ecg: ecg, night: night, trackerName: tracker.name, color: col)
+                            if !ecg.isEmpty {
+                                InfoLine(label: "Polar EKG: epizody AF", value: "\(ecg.count) · \(Fmt.dur(Spans.total(Spans.intersect(ecg, r))))")
+                            }
+                            if !night.isEmpty {
+                                InfoLine(label: "Rytm Snu: nieregularny rytm", value: "\(night.count) · \(Fmt.dur(Spans.total(Spans.intersect(night, r))))")
+                            }
+                        }
+                    }
+                }
+
                 SectionCard("Czas dzień po dniu") {
-                    DailyChart(days: st.days, values: st.dailyMinutes, color: col, format: fm)
+                    let extras = AfLink.extras(trackerId: tracker.id, days: st.days)
+                    DailyChart(days: st.days, values: st.dailyMinutes, color: col, extras: extras, format: fm)
+                    if extras.contains(where: { $0.values.contains { $0 > 0 } }) {
+                        AfLegend(trackerName: tracker.name, trackerColor: col,
+                                 ecg: extras[0].values.contains { $0 > 0 }, night: extras[1].values.contains { $0 > 0 })
+                    }
                     if n >= 28 && st.weeks.count >= 2 {
                         Eyebrow(text: "Tydzień po tygodniu (od poniedziałku)").padding(.top, 8)
                         CategoryBars(labels: weekLabels(st.weeks), values: st.weeks.map { $0.value }, color: col,

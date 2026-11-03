@@ -652,7 +652,20 @@ fun TrackerReport(t: Tracker, days: List<LocalDate>, v: Long, onOpen: () -> Unit
                 "${st.streakCurrent} d" to "obecna seria",
             )
         )
-        BarChart(st.days, st.dailyMinutes, col) { Stats.minutesLabel(it) }
+        // AFIB: migotanie z Polar EKG i Rytmu Snu jako wyróżnione słupki obok wpisów
+        val ctx = LocalContext.current
+        val ecgC = AfColors.ecg()
+        val nightC = AfColors.night()
+        val extras = remember(v, days, t.id) {
+            if (!AfEcg.isAfTracker(ctx, t.id, Repo.trackers())) emptyList()
+            else AfEcg.load().let { a ->
+                listOf(BarExtra("EKG", dailyMinutes(a.ecg, st.days), ecgC), BarExtra("Rytm Snu", dailyMinutes(a.night, st.days), nightC, dashed = true))
+            }
+        }
+        BarChart(st.days, st.dailyMinutes, col, { Stats.minutesLabel(it) }, extras)
+        if (extras.any { e -> e.values.any { it > 0f } }) {
+            AfLegend(t.name, col, extras[0].values.any { it > 0f }, extras[1].values.any { it > 0f })
+        }
         SinceNote(st.since, st.trimmed)
         TextButton(onClick = onOpen, contentPadding = PaddingValues(horizontal = 0.dp)) { Text("Pełne statystyki →") }
     }
