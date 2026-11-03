@@ -1,0 +1,7 @@
+e: The daemon has terminated unexpectedly on startup attempt #1 with error code: 0. The daemon process output:
+    1. Kotlin compile daemon is ready
+
+> Task :app:mergeExtDexRelease
+--
+BUILD SUCCESSFUL in 1m 4s
+44 actionable tasks: 44 executed
