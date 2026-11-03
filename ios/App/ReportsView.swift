@@ -157,8 +157,14 @@ struct CounterReportCard: View {
                 StatItem("\(st.streakCurrent) d", "obecna seria"),
             ])
             let ffExtras = FfNight.extras(c.id, st.days)
-            DailyChart(days: st.days, values: st.values, color: col, extras: ffExtras) { Fmt.num($0) }
-            if ffExtras.contains(where: { $0.values.contains { $0 > 0 } }) { FfLegend(counterName: c.name, counterColor: col) }
+            let ffOn = ffExtras.contains(where: { $0.values.contains { $0 > 0 } })
+            let ffTotal = ffOn ? FfNight.combined(c.id, values: st.values, days: st.days) : nil
+            if let t = ffTotal {
+                Text("Razem z Rytmem Snu: \(Fmt.num(t.reduce(0, +))) · średnio \(Fmt.num(t.reduce(0, +) / Double(max(1, st.fullDays)))) / dzień")
+                    .font(.subheadline.weight(.semibold))
+            }
+            DailyChart(days: st.days, values: st.values, color: col, extras: ffExtras, total: ffTotal) { Fmt.num($0) }
+            if ffOn { FfLegend(counterName: c.name, counterColor: col, total: true) }
             SinceNote(since: st.since, trimmed: st.trimmed)
             NavigationLink {
                 CounterDetailView(c: c, range: $range)
@@ -241,6 +247,11 @@ struct CounterDetailView: View {
         let col = Palette.color(counter.color)
         let n = st.days.count
         let f: (Double) -> String = { Fmt.num($0) }
+        // FF z Rytmu Snu: wykrycia na dzień i suma z obu aplikacji (bez podwójnego liczenia)
+        let ffExtras = FfNight.extras(counter.id, st.days)
+        let ffDet = ffExtras.first?.values
+        let ffTotal = (ffDet?.contains { $0 > 0 } ?? false) ? FfNight.combined(counter.id, values: st.values, days: st.days) : nil
+        let ffItems: [StatItem] = ffSummary(ffDet, ffTotal, st.fullDays)
         ScrollView {
             VStack(spacing: 12) {
                 RangePicker(range: $range)
@@ -257,7 +268,7 @@ struct CounterDetailView: View {
                                  st.worstIdx.map { "najmniej, \(Fmt.day(st.days[$0]))" } ?? "najmniej"),
                         StatItem("\(st.activeDays)/\(n)", "dni z wpisem"),
                         StatItem(Fmt.num(st.clicks), "kliknięć +"),
-                    ] + (st.goalDays.map { [StatItem("\($0)/\(n)", "dni z osiągniętym celem")] } ?? []))
+                    ] + (st.goalDays.map { [StatItem("\($0)/\(n)", "dni z osiągniętym celem")] } ?? []) + ffItems)
                 }
 
                 SectionCard("Serie", hint: "Liczone z całej historii.") {
@@ -280,9 +291,8 @@ struct CounterDetailView: View {
                 }
 
                 SectionCard("Dzień po dniu") {
-                    let ffExtras = FfNight.extras(counter.id, st.days)
-                    DailyChart(days: st.days, values: st.values, color: col, extras: ffExtras, format: f)
-                    if ffExtras.contains(where: { $0.values.contains { $0 > 0 } }) { FfLegend(counterName: counter.name, counterColor: col) }
+                    DailyChart(days: st.days, values: st.values, color: col, extras: ffExtras, total: ffTotal, format: f)
+                    if ffTotal != nil { FfLegend(counterName: counter.name, counterColor: col, total: true) }
                     if n >= 28 && st.weeks.count >= 2 {
                         Eyebrow(text: "Tydzień po tygodniu (od poniedziałku)").padding(.top, 8)
                         CategoryBars(labels: weekLabels(st.weeks), values: st.weeks.map { $0.value }, color: col,
@@ -322,7 +332,7 @@ struct CounterDetailView: View {
                     }
                     .font(.subheadline.weight(.semibold))
                     .buttonStyle(.borderless)
-                    let rows = st.days.indices.filter { st.values[$0] != 0 }.reversed()
+                    let rows = st.days.indices.filter { i in st.values[i] != 0 || (ffDet.map { $0.indices.contains(i) && $0[i] > 0 } ?? false) }.reversed()
                     if rows.isEmpty {
                         Text("Brak wpisów w tym okresie.").font(.caption).foregroundStyle(.secondary)
                     }
@@ -334,7 +344,12 @@ struct CounterDetailView: View {
                                 if let g = counter.goal, st.values[i] >= Double(g) {
                                     Text("cel ✓").font(.caption).foregroundStyle(col)
                                 }
-                                Text(Fmt.num(st.values[i])).font(.system(.body, design: .monospaced))
+                                if let t = ffTotal, let d = ffDet, d.indices.contains(i), d[i] > 0 {
+                                    Text("Ty \(Fmt.num(st.values[i])) · Rytm Snu \(Fmt.num(d[i])) · razem \(Fmt.num(t[i]))")
+                                        .font(.system(.subheadline, design: .monospaced))
+                                } else {
+                                    Text(Fmt.num(st.values[i])).font(.system(.body, design: .monospaced))
+                                }
                                 Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
                             }
                             .contentShape(Rectangle())
@@ -351,6 +366,16 @@ struct CounterDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $entriesDay) { e in EntriesView(counter: counter, initialDay: e.day) }
         .sheet(isPresented: $setDay) { DayValueForm(counter: counter, initialDay: Fmt.addDays(Fmt.today, -1)) }
+    }
+
+    private func ffSummary(_ det: [Double]?, _ total: [Double]?, _ fullDays: Int) -> [StatItem] {
+        guard let t = total else { return [] }
+        let sum = t.reduce(0, +)
+        return [
+            StatItem(Fmt.num(det?.reduce(0, +) ?? 0), "wykryte przez Rytm Snu"),
+            StatItem(Fmt.num(sum), "razem z obu aplikacji"),
+            StatItem(Fmt.num(sum / Double(max(1, fullDays))), "razem średnio / dzień"),
+        ]
     }
 
     private func weekdayHint(_ avg: [Double]) -> String {

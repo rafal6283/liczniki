@@ -268,6 +268,7 @@ struct DailyChart: View {
     let values: [Double]
     let color: Color
     var extras: [BarExtra] = []
+    var total: [Double]? = nil // np. suma FF z obu aplikacji – jasne tło słupka z kreską u góry
     let format: (Double) -> String
 
     @State private var grown = false
@@ -281,9 +282,22 @@ struct DailyChart: View {
     var body: some View {
         let ext = extras.filter { $0.values.contains { $0 > 0 } }
         let extMax = days.indices.map { i in ext.reduce(0) { $0 + ($1.values.indices.contains(i) ? $1.values[i] : 0) } }.max() ?? 0
-        let top = niceMax(max(values.max() ?? 0, extMax))
+        let tot = total.flatMap { t in t.indices.contains { i in t[i] > (values.indices.contains(i) ? values[i] : 0) } ? t : nil }
+        let top = niceMax(max(values.max() ?? 0, extMax, tot?.max() ?? 0))
         let si = selIndex
         Chart {
+            // suma z obu aplikacji: jasne tło pod słupkiem i kreska na jej wysokości
+            if let tot {
+                ForEach(days.indices, id: \.self) { i in
+                    if tot.indices.contains(i), tot[i] > 0 {
+                        BarMark(x: .value("Dzień", days[i], unit: .day), yStart: .value("Od", 0), yEnd: .value("Razem", grown ? tot[i] : 0))
+                            .foregroundStyle(Color.primary.opacity(0.08))
+                        RuleMark(xStart: .value("Od", days[i]), xEnd: .value("Do", Fmt.addDays(days[i], 1)), y: .value("Razem", grown ? tot[i] : 0))
+                            .foregroundStyle(Color.primary.opacity(0.75))
+                            .lineStyle(StrokeStyle(lineWidth: 2))
+                    }
+                }
+            }
             ForEach(days.indices, id: \.self) { i in
                 BarMark(
                     x: .value("Dzień", days[i], unit: .day),
@@ -318,7 +332,7 @@ struct DailyChart: View {
                         ChartTip(title: "\(Fmt.weekday(days[i])) \(Fmt.day(days[i]))",
                                  value: format(values[i]) + ext.compactMap { e in
                                      e.values.indices.contains(i) && e.values[i] > 0 ? " · \(e.label) \(format(e.values[i]))" : nil
-                                 }.joined())
+                                 }.joined() + ((tot?.indices.contains(i) ?? false) && tot![i] > 0 ? " · razem \(format(tot![i]))" : ""))
                     }
             }
         }

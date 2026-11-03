@@ -626,11 +626,22 @@ fun CounterReport(c: Counter, days: List<LocalDate>, v: Long, onOpen: () -> Unit
         // FF: wiatry wykryte przez Rytm Snu jako wyróżnione słupki obok Twoich wpisów
         val ctx = LocalContext.current
         val nightC = AfColors.night()
-        val extras = remember(v, days, c.id) {
-            FfNight.forCounter(ctx, c.id)?.let { listOf(BarExtra("Rytm Snu", FfNight.daily(it.detected, dd), nightC, dashed = true)) }.orEmpty()
+        val ff = remember(v, days, c.id) { FfNight.forCounter(ctx, c.id) }
+        val extras = remember(ff, dd) {
+            ff?.let { listOf(BarExtra("Rytm Snu", FfNight.daily(it.detected, dd), nightC, dashed = true)) }.orEmpty()
         }
-        BarChart(dd, st.values, col, extras) { Num.fmt(it) }
-        if (extras.any { e -> e.values.any { it > 0f } }) FfLegend(c.name, col, true)
+        val total = remember(ff, dd, st) {
+            ff?.let { FfNight.combined(st.values, FfNight.taps(c.id, dd.first(), dd.last()), it.detected, it.windows, dd, ComparePrefs.tolSec(ctx) * 1000L) }
+        }
+        val hasExt = extras.any { e -> e.values.any { it > 0f } }
+        if (hasExt && total != null) {
+            Text(
+                "Razem z Rytmem Snu: ${Num.fmt(total.sum())} · średnio ${Num.fmt(total.sum() / maxOf(1, st.fullDays))} / dzień",
+                style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold,
+            )
+        }
+        BarChart(dd, st.values, col, extras, total = if (hasExt) total else null) { Num.fmt(it) }
+        if (hasExt) FfLegend(c.name, col, true, total = true)
         SinceNote(st.since, st.trimmed)
         TextButton(onClick = onOpen, contentPadding = PaddingValues(horizontal = 0.dp)) { Text("Pełne statystyki →") }
     }

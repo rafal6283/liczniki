@@ -48,7 +48,14 @@ fun niceMax(v: Float): Float {
  * Słupki wyrastają kaskadą, skala osi płynnie się dopasowuje, a dotknięcie lub przeciągnięcie palcem pokazuje wartość dnia.
  */
 @Composable
-fun BarChart(days: List<LocalDate>, values: List<Float>, color: Color, extras: List<BarExtra> = emptyList(), format: (Float) -> String) {
+fun BarChart(
+    days: List<LocalDate>,
+    values: List<Float>,
+    color: Color,
+    extras: List<BarExtra> = emptyList(),
+    total: List<Float>? = null, // np. suma FF z obu aplikacji – jasne tło słupka z kreską u góry
+    format: (Float) -> String,
+) {
     val measurer = rememberTextMeasurer()
     val labelStyle = TextStyle(fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant)
     val tipStyle = TextStyle(fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.inverseOnSurface)
@@ -59,7 +66,9 @@ fun BarChart(days: List<LocalDate>, values: List<Float>, color: Color, extras: L
     val extraOn = extras.filter { e -> e.values.any { it > 0f } }
     val extraMax = values.indices.maxOfOrNull { i -> extraOn.sumOf { it.values.getOrElse(i) { 0f }.toDouble() }.toFloat() } ?: 0f
     val outline = MaterialTheme.colorScheme.surface
-    val yMax by animateFloatAsState(niceMax(maxOf(values.maxOrNull() ?: 0f, extraMax)), spring(stiffness = Spring.StiffnessLow), label = "yMax")
+    val totalOn = total?.takeIf { tt -> tt.indices.any { tt[it] > values.getOrElse(it) { 0f } } }
+    val totalColor = MaterialTheme.colorScheme.onSurface
+    val yMax by animateFloatAsState(niceMax(maxOf(values.maxOrNull() ?: 0f, extraMax, totalOn?.maxOrNull() ?: 0f)), spring(stiffness = Spring.StiffnessLow), label = "yMax")
     val sel = rememberSelection(days.firstOrNull() to values.size)
     val left = with(LocalDensity.current) { 46.dp.toPx() }
 
@@ -93,6 +102,15 @@ fun BarChart(days: List<LocalDate>, values: List<Float>, color: Color, extras: L
         val radius = if (bw - gap > 6.dp.toPx()) 3.dp.toPx() else 0f
         val step = if (n <= 8) 1 else ceil(n / 6.0).toInt()
         for (i in 0 until n) {
+            // suma z obu aplikacji: jasne tło pod słupkiem i wyraźna kreska na jej wysokości
+            val tot = (totalOn?.getOrElse(i) { 0f } ?: 0f) * anim.t
+            if (tot > 0f) {
+                val th = maxOf(1.5f, h * tot / yMax).coerceAtMost(h)
+                val x0 = left + i * bw + gap / 2f
+                val tw = maxOf(0.6f, bw - gap)
+                drawRect(totalColor.copy(alpha = 0.08f), Offset(x0, top + h - th), Size(tw, th))
+                drawLine(totalColor.copy(alpha = 0.75f), Offset(x0, top + h - th), Offset(x0 + tw, top + h - th), strokeWidth = 2.dp.toPx())
+            }
             val value = anim[i]
             if (value > 0f) {
                 val bh = maxOf(1.5f, h * value / yMax).coerceAtMost(h)
@@ -139,7 +157,8 @@ fun BarChart(days: List<LocalDate>, values: List<Float>, color: Color, extras: L
             val barTop = top + h - maxOf(1.5f, h * anim[s] / yMax).coerceAtMost(h)
             tooltip(
                 measurer, "${Dates.weekday(days[s])} ${Dates.day(days[s])} · ${format(v)}" +
-                    extraOn.filter { it.values.getOrElse(s) { 0f } > 0f }.joinToString("") { " · ${it.label} ${format(it.values[s])}" },
+                    extraOn.filter { it.values.getOrElse(s) { 0f } > 0f }.joinToString("") { " · ${it.label} ${format(it.values[s])}" } +
+                    (totalOn?.getOrNull(s)?.takeIf { it > 0f }?.let { " · razem ${format(it)}" } ?: ""),
                 cx, if (v > 0f) barTop else top + h, tipStyle, tipBg, sel.alpha.value,
                 guide = grid, guideBottom = top + h,
             )

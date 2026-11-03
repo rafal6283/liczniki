@@ -214,6 +214,19 @@ enum FfNight {
         return [BarExtra(label: "Rytm Snu", values: daily(d.detected, days), color: AfColors.night, striped: true)]
     }
 
+    /// Dobowa suma z obu aplikacji bez podwójnego liczenia: wartość dnia w Kresce + wykrycia − pary w nocy (±tolerancja).
+    static func combined(_ id: Int64, values: [Double], days: [Date]) -> [Double]? {
+        guard let d = forCounter(id), let first = days.first, let last = days.last else { return nil }
+        let taps = taps(id, from: first, to: last)
+        let tol = Int64(FartLink.tolSec) * 1000
+        return days.enumerated().map { i, day in
+            let a = Fmt.cal.startOfDay(for: day).ms, b = Fmt.cal.startOfDay(for: Fmt.addDays(day, 1)).ms
+            let det = d.detected.filter { $0 >= a && $0 < b }
+            let mine = taps.filter { t in t >= a && t < b && d.windows.contains { t >= $0.start && t < $0.end } }
+            return (values.indices.contains(i) ? values[i] : 0) + Double(det.count - FartLink.matchCount(mine, det, tol))
+        }
+    }
+
     /// Kliknięcia z godziną (minus cofa ostatnie kliknięcie dnia; korekty dnia bez godziny pominięte).
     static func taps(_ id: Int64, from: Date, to: Date) -> [Int64] {
         var byDay: [String: [Int64]] = [:]
@@ -232,9 +245,20 @@ enum FfNight {
 struct FfLegend: View {
     let counterName: String
     let counterColor: Color
+    var total = false
 
     var body: some View {
         HStack(spacing: 10) {
+            if total {
+                HStack(spacing: 4) {
+                    ZStack(alignment: .top) {
+                        Rectangle().fill(Color.primary.opacity(0.08))
+                        Rectangle().fill(Color.primary.opacity(0.75)).frame(height: 2)
+                    }
+                    .frame(width: 12, height: 10)
+                    Text("razem").bold()
+                }
+            }
             HStack(spacing: 4) { AfSwatch(color: counterColor); Text("\(counterName) (Kreska)") }
             HStack(spacing: 4) { AfSwatch(color: AfColors.night, striped: true); Text("Rytm Snu (wykryte w nocy)").bold().foregroundStyle(AfColors.night) }
         }

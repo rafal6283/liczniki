@@ -67,6 +67,19 @@ object FfNight {
         times.count { it in a until b }.toFloat()
     }
 
+    /**
+     * Dobowa suma z obu aplikacji bez podwójnego liczenia: wartość dnia w Kresce + wykrycia Rytmu Snu
+     * − pary wpis ↔ wykrycie w nocy (±tolerancja).
+     */
+    fun combined(values: List<Float>, taps: List<Long>, detected: List<Long>, windows: List<Span>, days: List<LocalDate>, tolMs: Long): List<Float> =
+        days.mapIndexed { i, d ->
+            val a = Dates.startOf(d)
+            val b = Dates.startOf(d.plusDays(1))
+            val det = detected.filter { it in a until b }
+            val mine = taps.filter { t -> t in a until b && windows.any { t >= it.start && t < it.end } }
+            values.getOrElse(i) { 0f } + det.size - FartMerge.matchCount(mine, det, tolMs)
+        }
+
     /** Kliknięcia z godziną (minus cofa ostatnie kliknięcie z tego dnia; korekty dnia bez godziny pominięte). */
     fun taps(counterId: Long, from: LocalDate, to: LocalDate): List<Long> {
         val byDay = LinkedHashMap<String, ArrayList<Long>>()
@@ -80,9 +93,17 @@ object FfNight {
 }
 
 @Composable
-fun FfLegend(counterName: String, counterColor: Color, night: Boolean) {
+fun FfLegend(counterName: String, counterColor: Color, night: Boolean, total: Boolean = false) {
     val n = AfColors.night()
+    val tc = MaterialTheme.colorScheme.onSurface
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 6.dp)) {
+        if (total) {
+            Canvas(Modifier.size(12.dp, 10.dp)) {
+                drawRect(tc.copy(alpha = 0.08f))
+                drawLine(tc.copy(alpha = 0.75f), Offset(0f, 0f), Offset(size.width, 0f), strokeWidth = 2.dp.toPx())
+            }
+            Text(" razem  ", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+        }
         Box(Modifier.size(12.dp, 10.dp).background(counterColor, RoundedCornerShape(2.dp)))
         Text(" $counterName (Kreska)", style = MaterialTheme.typography.labelSmall)
         if (night) {

@@ -280,6 +280,10 @@ fun CounterDetail(
     val ctx = LocalContext.current
     // licznik porównywany z Rytmem Snu (domyślnie „FF”): wykrycia z nocy obok wpisów
     val ff = remember(v, c.id) { FfNight.forCounter(ctx, c.id) }
+    val ffTotal = remember(ff, v, days) {
+        ff?.let { FfNight.combined(st.values, FfNight.taps(c.id, dd.first(), dd.last()), it.detected, it.windows, dd, ComparePrefs.tolSec(ctx) * 1000L) }
+    }
+    val ffDet = remember(ff, dd) { ff?.let { FfNight.daily(it.detected, dd) } }
 
     LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { DetailHeader("Licznik", c.name, col, range, onRange, onBack) }
@@ -299,7 +303,12 @@ fun CounterDetail(
                             (if (st.worstActiveIdx >= 0) "najmniej, ${Dates.day(dd[st.worstActiveIdx])}" else "najmniej"),
                         "${st.activeDays}/$n" to "dni z wpisem",
                         Num.fmt(st.clicks) to "kliknięć +",
-                    ) + (if (st.goalDays != null) listOf("${st.goalDays}/$n" to "dni z osiągniętym celem") else emptyList())
+                    ) + (if (st.goalDays != null) listOf("${st.goalDays}/$n" to "dni z osiągniętym celem") else emptyList()) +
+                        (if (ffTotal != null && (ffDet?.sum() ?: 0f) > 0f) listOf(
+                            Num.fmt(ffDet!!.sum()) to "wykryte przez Rytm Snu",
+                            Num.fmt(ffTotal.sum()) to "razem z obu aplikacji",
+                            Num.fmt(ffTotal.sum() / maxOf(1, st.fullDays)) to "razem średnio / dzień",
+                        ) else emptyList())
                 )
             }
         }
@@ -337,8 +346,9 @@ fun CounterDetail(
                 val extras = remember(ff, dd) {
                     ff?.let { listOf(BarExtra("Rytm Snu", FfNight.daily(it.detected, dd), nightC, dashed = true)) }.orEmpty()
                 }
-                BarChart(dd, st.values, col, extras = extras, format = f)
-                if (extras.any { e -> e.values.any { it > 0f } }) FfLegend(c.name, col, true)
+                val hasExt = extras.any { e -> e.values.any { it > 0f } }
+                BarChart(dd, st.values, col, extras = extras, total = if (hasExt) ffTotal else null, format = f)
+                if (hasExt) FfLegend(c.name, col, true, total = true)
                 if (n >= 28 && st.weeks.size >= 2) {
                     Spacer(Modifier.height(14.dp))
                     Eyebrow("Tydzień po tygodniu (od poniedziałku)")
@@ -387,7 +397,7 @@ fun CounterDetail(
                     Spacer(Modifier.width(16.dp))
                     TextButton(onClick = onSetDay, contentPadding = PaddingValues(horizontal = 0.dp)) { Text("Ustaw wartość dnia") }
                 }
-                val rows = dd.indices.filter { st.values[it] != 0f }.reversed()
+                val rows = dd.indices.filter { st.values[it] != 0f || (ffDet?.getOrNull(it) ?: 0f) > 0f }.reversed()
                 if (rows.isEmpty()) {
                     Text("Brak wpisów w tym okresie.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
@@ -398,7 +408,15 @@ fun CounterDetail(
                         if (g != null && st.values[i] >= g) {
                             Text("cel ✓  ", color = col, style = MaterialTheme.typography.bodySmall)
                         }
-                        Text(Num.fmt(st.values[i]), fontFamily = FontFamily.Monospace)
+                        val det = ffDet?.getOrNull(i) ?: 0f
+                        if (det > 0f && ffTotal != null) {
+                            Text(
+                                "Ty ${Num.fmt(st.values[i])} · Rytm Snu ${Num.fmt(det)} · razem ${Num.fmt(ffTotal[i])}",
+                                fontFamily = FontFamily.Monospace,
+                            )
+                        } else {
+                            Text(Num.fmt(st.values[i]), fontFamily = FontFamily.Monospace)
+                        }
                     }
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 }
