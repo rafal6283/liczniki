@@ -277,6 +277,9 @@ fun CounterDetail(
     val dd = st.days
     val n = dd.size
     val f: (Float) -> String = { Num.fmt(it) }
+    val ctx = LocalContext.current
+    // licznik porównywany z Rytmem Snu (domyślnie „FF”): wykrycia z nocy obok wpisów
+    val ff = remember(v, c.id) { FfNight.forCounter(ctx, c.id) }
 
     LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { DetailHeader("Licznik", c.name, col, range, onRange, onBack) }
@@ -312,9 +315,30 @@ fun CounterDetail(
             }
         }
 
+        if (ff != null) item {
+            val taps = remember(v, days, c.id) { FfNight.taps(c.id, days.first(), days.last()) }
+            val a = Dates.startOf(days.first())
+            val b = Dates.startOf(days.last().plusDays(1))
+            val det = remember(ff, days) { ff.detected.filter { it in a until b } }
+            val tol = remember { ComparePrefs.tolSec(ctx) }
+            StatSection(
+                "Oś czasu FF",
+                "Twoje wpisy obok wiatrów wykrytych w nocy przez Rytm Snu (bez odrzuconych ✗). Tło dolnego pasa – nagrywana noc. " +
+                    "Dotknij dnia, żeby zobaczyć godziny.",
+                "z Rytmu Snu",
+            ) {
+                FfTimeline(dd, taps, det, ff.windows, c.name, col, tol)
+            }
+        }
+
         item {
             StatSection("Dzień po dniu") {
-                BarChart(dd, st.values, col, format = f)
+                val nightC = AfColors.night()
+                val extras = remember(ff, dd) {
+                    ff?.let { listOf(BarExtra("Rytm Snu", FfNight.daily(it.detected, dd), nightC, dashed = true)) }.orEmpty()
+                }
+                BarChart(dd, st.values, col, extras = extras, format = f)
+                if (extras.any { e -> e.values.any { it > 0f } }) FfLegend(c.name, col, true)
                 if (n >= 28 && st.weeks.size >= 2) {
                     Spacer(Modifier.height(14.dp))
                     Eyebrow("Tydzień po tygodniu (od poniedziałku)")

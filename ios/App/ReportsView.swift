@@ -156,7 +156,9 @@ struct CounterReportCard: View {
                 StatItem(peak.map { "\($0):00" } ?? "–", "najczęstsza godzina"),
                 StatItem("\(st.streakCurrent) d", "obecna seria"),
             ])
-            DailyChart(days: st.days, values: st.values, color: col) { Fmt.num($0) }
+            let ffExtras = FfNight.extras(c.id, st.days)
+            DailyChart(days: st.days, values: st.values, color: col, extras: ffExtras) { Fmt.num($0) }
+            if ffExtras.contains(where: { $0.values.contains { $0 > 0 } }) { FfLegend(counterName: c.name, counterColor: col) }
             SinceNote(since: st.since, trimmed: st.trimmed)
             NavigationLink {
                 CounterDetailView(c: c, range: $range)
@@ -267,8 +269,20 @@ struct CounterDetailView: View {
                     }
                 }
 
+                if let ff = FfNight.forCounter(counter.id), let first = st.days.first, let last = st.days.last {
+                    let a = Fmt.cal.startOfDay(for: first).ms, b = Fmt.cal.startOfDay(for: Fmt.addDays(last, 1)).ms
+                    SectionCard("Oś czasu FF",
+                                hint: "Twoje wpisy obok wiatrów wykrytych w nocy przez Rytm Snu (bez odrzuconych ✗). Tło dolnego pasa – nagrywana noc. Dotknij dnia, żeby zobaczyć godziny.") {
+                        FfTimeline(days: st.days, taps: FfNight.taps(counter.id, from: first, to: last),
+                                   detected: ff.detected.filter { $0 >= a && $0 < b }, windows: ff.windows,
+                                   counterName: counter.name, color: col, tolSec: FartLink.tolSec)
+                    }
+                }
+
                 SectionCard("Dzień po dniu") {
-                    DailyChart(days: st.days, values: st.values, color: col, format: f)
+                    let ffExtras = FfNight.extras(counter.id, st.days)
+                    DailyChart(days: st.days, values: st.values, color: col, extras: ffExtras, format: f)
+                    if ffExtras.contains(where: { $0.values.contains { $0 > 0 } }) { FfLegend(counterName: counter.name, counterColor: col) }
                     if n >= 28 && st.weeks.count >= 2 {
                         Eyebrow(text: "Tydzień po tygodniu (od poniedziałku)").padding(.top, 8)
                         CategoryBars(labels: weekLabels(st.weeks), values: st.weeks.map { $0.value }, color: col,

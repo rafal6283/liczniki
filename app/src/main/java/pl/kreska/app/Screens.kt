@@ -623,7 +623,14 @@ fun CounterReport(c: Counter, days: List<LocalDate>, v: Long, onOpen: () -> Unit
                 "${st.streakCurrent} d" to "obecna seria",
             )
         )
-        BarChart(dd, st.values, col) { Num.fmt(it) }
+        // FF: wiatry wykryte przez Rytm Snu jako wyróżnione słupki obok Twoich wpisów
+        val ctx = LocalContext.current
+        val nightC = AfColors.night()
+        val extras = remember(v, days, c.id) {
+            FfNight.forCounter(ctx, c.id)?.let { listOf(BarExtra("Rytm Snu", FfNight.daily(it.detected, dd), nightC, dashed = true)) }.orEmpty()
+        }
+        BarChart(dd, st.values, col, extras) { Num.fmt(it) }
+        if (extras.any { e -> e.values.any { it > 0f } }) FfLegend(c.name, col, true)
         SinceNote(st.since, st.trimmed)
         TextButton(onClick = onOpen, contentPadding = PaddingValues(horizontal = 0.dp)) { Text("Pełne statystyki →") }
     }

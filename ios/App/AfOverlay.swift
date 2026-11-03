@@ -185,3 +185,164 @@ struct AfTimeline: View {
         (Fmt.cal.isDate(t.date, inSameDayAs: d) ? "" : Fmt.weekday(t.date) + " ") + Fmt.hm(t)
     }
 }
+
+// MARK: - FF z Rytmu Snu (tak samo jak migotanie na wykresach AFIB)
+
+enum FfNight {
+    struct Data {
+        let detected: [Int64]
+        let windows: [Interval]
+        var any: Bool { !detected.isEmpty || !windows.isEmpty }
+    }
+
+    /// Dane dla licznika porównywanego z Rytmem Snu (domyślnie „FF”), inaczej nil.
+    static func forCounter(_ id: Int64) -> Data? {
+        guard FartLink.counterId(Repo.counters()) == id else { return nil }
+        let d = Data(detected: ExtStore.nightFarts().sorted(), windows: ExtStore.nightWindows())
+        return d.any ? d : nil
+    }
+
+    static func daily(_ times: [Int64], _ days: [Date]) -> [Double] {
+        days.map { d in
+            let a = Fmt.cal.startOfDay(for: d).ms, b = Fmt.cal.startOfDay(for: Fmt.addDays(d, 1)).ms
+            return Double(times.filter { $0 >= a && $0 < b }.count)
+        }
+    }
+
+    static func extras(_ id: Int64, _ days: [Date]) -> [BarExtra] {
+        guard let d = forCounter(id) else { return [] }
+        return [BarExtra(label: "Rytm Snu", values: daily(d.detected, days), color: AfColors.night, striped: true)]
+    }
+
+    /// Kliknięcia z godziną (minus cofa ostatnie kliknięcie dnia; korekty dnia bez godziny pominięte).
+    static func taps(_ id: Int64, from: Date, to: Date) -> [Int64] {
+        var byDay: [String: [Int64]] = [:]
+        for t in Repo.taps(id, from: Fmt.key(from), to: Fmt.key(to)) where !t.manual {
+            let k = Fmt.key(ms: t.ts)
+            if t.amount > 0 {
+                byDay[k, default: []].append(contentsOf: Array(repeating: t.ts, count: t.amount))
+            } else {
+                for _ in 0..<(-t.amount) where !(byDay[k]?.isEmpty ?? true) { byDay[k]!.removeLast() }
+            }
+        }
+        return byDay.values.flatMap { $0 }.sorted()
+    }
+}
+
+struct FfLegend: View {
+    let counterName: String
+    let counterColor: Color
+
+    var body: some View {
+        HStack(spacing: 10) {
+            HStack(spacing: 4) { AfSwatch(color: counterColor); Text("\(counterName) (Kreska)") }
+            HStack(spacing: 4) { AfSwatch(color: AfColors.night, striped: true); Text("Rytm Snu (wykryte w nocy)").bold().foregroundStyle(AfColors.night) }
+        }
+        .font(.caption2)
+    }
+}
+
+/// Oś czasu FF: wiersz 0–24 h na dzień; górny pas – Twoje kliknięcia, dolny – wykrycia Rytmu Snu na tle nagrywanej nocy.
+struct FfTimeline: View {
+    let days: [Date]
+    let taps: [Int64]
+    let detected: [Int64]
+    let windows: [Interval]
+    let counterName: String
+    let color: Color
+    let tolSec: Int
+    @State private var sel: Date?
+
+    private static let rowH: CGFloat = 34, head: CGFloat = 16, left: CGFloat = 64
+
+    private func range(_ d: Date) -> (Int64, Int64) { (Fmt.cal.startOfDay(for: d).ms, Fmt.cal.startOfDay(for: Fmt.addDays(d, 1)).ms) }
+    private func inDay(_ l: [Int64], _ d: Date) -> [Int64] { let r = range(d); return l.filter { $0 >= r.0 && $0 < r.1 } }
+
+    var body: some View {
+        let rows = Array(days.reversed().filter { !inDay(taps, $0).isEmpty || !inDay(detected, $0).isEmpty }.prefix(21))
+        if rows.isEmpty {
+            Text("Brak FF w Kresce ani wykryć z Rytmu Snu w tym okresie.").font(.caption).foregroundStyle(.secondary)
+        } else {
+            let selected = sel.flatMap { s in rows.first { Fmt.cal.isDate($0, inSameDayAs: s) } }
+                ?? rows.first { !inDay(detected, $0).isEmpty } ?? rows[0]
+            VStack(alignment: .leading, spacing: 8) {
+                Canvas { ctx, size in draw(ctx, size, rows, selected) }
+                    .frame(height: Self.head + Self.rowH * CGFloat(rows.count))
+                    .contentShape(Rectangle())
+                    .onTapGesture { p in
+                        let i = Int((p.y - Self.head) / Self.rowH)
+                        if rows.indices.contains(i) { sel = rows[i] }
+                    }
+                    .sensoryFeedback(.selection, trigger: sel)
+                FfLegend(counterName: counterName, counterColor: color)
+                details(selected)
+            }
+        }
+    }
+
+    private func draw(_ ctx: GraphicsContext, _ size: CGSize, _ rows: [Date], _ selected: Date) {
+        let w = size.width - Self.left
+        for h in [0, 6, 12, 18, 24] {
+            let x = Self.left + w * CGFloat(h) / 24
+            ctx.stroke(Path { $0.move(to: CGPoint(x: x, y: Self.head - 2)); $0.addLine(to: CGPoint(x: x, y: size.height)) },
+                       with: .color(.secondary.opacity(0.3)), lineWidth: 1)
+            ctx.draw(Text("\(h)").font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary),
+                     at: CGPoint(x: min(max(x, Self.left + 4), size.width - 6), y: 6))
+        }
+        for (i, d) in rows.enumerated() {
+            let y0 = Self.head + CGFloat(i) * Self.rowH
+            if Fmt.cal.isDate(d, inSameDayAs: selected) {
+                ctx.fill(Path(roundedRect: CGRect(x: 0, y: y0 + 1, width: size.width, height: Self.rowH - 2), cornerRadius: 6),
+                         with: .color(Color(.tertiarySystemFill)))
+            }
+            ctx.draw(Text("\(Fmt.weekday(d)) \(Fmt.cal.component(.day, from: d)).\(String(format: "%02d", Fmt.cal.component(.month, from: d)))")
+                        .font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary),
+                     at: CGPoint(x: 4, y: y0 + Self.rowH / 2), anchor: .leading)
+            let r = range(d)
+            func x(_ t: Int64) -> CGFloat { Self.left + w * CGFloat(min(max(Double(t - r.0) / Double(r.1 - r.0), 0), 1)) }
+            let lane: CGFloat = 10, gap: CGFloat = 2
+            let top = y0 + (Self.rowH - 2 * lane - gap) / 2
+            ctx.fill(Path(roundedRect: CGRect(x: Self.left, y: top, width: w, height: 2 * lane + gap), cornerRadius: 3),
+                     with: .color(.secondary.opacity(0.12)))
+            for s in Spans.intersect(windows, [Interval(start: r.0, end: r.1)]) {
+                ctx.fill(Path(CGRect(x: x(s.start), y: top + lane + gap, width: max(1, x(s.end) - x(s.start)), height: lane)),
+                         with: .color(AfColors.night.opacity(0.18)))
+            }
+            for t in inDay(taps, d) {
+                ctx.fill(Path(CGRect(x: x(t) - 1, y: top, width: 2, height: lane)), with: .color(color))
+            }
+            for t in inDay(detected, d) {
+                let cx = x(t), cy = top + lane + gap + lane / 2
+                ctx.fill(Path(CGRect(x: cx - 1, y: top + lane + gap, width: 2, height: lane)), with: .color(AfColors.night))
+                ctx.stroke(Path(ellipseIn: CGRect(x: cx - 2.5, y: cy - 2.5, width: 5, height: 5)), with: .color(AfColors.night), lineWidth: 1)
+            }
+        }
+    }
+
+    @ViewBuilder private func details(_ d: Date) -> some View {
+        let mine = inDay(taps, d), det = inDay(detected, d)
+        let r = range(d)
+        let wins = windows.filter { $0.end > r.0 && $0.start < r.1 }
+        let inNight = mine.filter { t in wins.contains { t >= $0.start && t < $0.end } }
+        let matched = FartLink.matchCount(inNight, det, Int64(tolSec) * 1000)
+        VStack(alignment: .leading, spacing: 6) {
+            Text(Fmt.longDay(d)).font(.subheadline.weight(.bold))
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                AfSwatch(color: color)
+                Text("\(counterName) (\(mine.count)): " + (mine.isEmpty ? "–" : mine.map { Fmt.hm($0) }.joined(separator: ", ")))
+            }
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                AfSwatch(color: AfColors.night, striped: true)
+                Text("Rytm Snu (\(det.count)): " + (det.isEmpty ? "–" : det.map { Fmt.hm($0) }.joined(separator: ", ")))
+                    .bold().foregroundStyle(AfColors.night)
+            }
+            if !wins.isEmpty {
+                Text("Noc: " + wins.map { "\(Fmt.hm($0.start))–\(Fmt.hm($0.end))" }.joined(separator: ", ")
+                     + " · w nocy Ty \(inNight.count), detektor \(det.count), wspólne \(matched) (±\(tolSec) s), "
+                     + "łącznie bez podwójnego liczenia \(mine.count + det.count - matched)")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .font(.subheadline)
+    }
+}
