@@ -314,7 +314,7 @@ fun CounterDetail(
 
         item {
             StatSection("Dzień po dniu") {
-                BarChart(dd, st.values, col, f)
+                BarChart(dd, st.values, col, format = f)
                 if (n >= 28 && st.weeks.size >= 2) {
                     Spacer(Modifier.height(14.dp))
                     Eyebrow("Tydzień po tygodniu (od poniedziałku)")
@@ -478,7 +478,7 @@ fun TrackerDetail(
                         listOf(BarExtra("EKG", dailyMinutes(a.ecg, dd), ecgC), BarExtra("Rytm Snu", dailyMinutes(a.night, dd), nightC, dashed = true))
                     }.orEmpty()
                 }
-                BarChart(dd, st.dailyMinutes, col, fm, extras)
+                BarChart(dd, st.dailyMinutes, col, extras = extras, format = fm)
                 if (extras.any { e -> e.values.any { it > 0f } }) {
                     AfLegend(t.name, col, extras[0].values.any { it > 0f }, extras[1].values.any { it > 0f })
                 }

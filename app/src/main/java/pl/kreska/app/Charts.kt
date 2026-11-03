@@ -48,7 +48,7 @@ fun niceMax(v: Float): Float {
  * Słupki wyrastają kaskadą, skala osi płynnie się dopasowuje, a dotknięcie lub przeciągnięcie palcem pokazuje wartość dnia.
  */
 @Composable
-fun BarChart(days: List<LocalDate>, values: List<Float>, color: Color, format: (Float) -> String, extras: List<BarExtra> = emptyList()) {
+fun BarChart(days: List<LocalDate>, values: List<Float>, color: Color, extras: List<BarExtra> = emptyList(), format: (Float) -> String) {
     val measurer = rememberTextMeasurer()
     val labelStyle = TextStyle(fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant)
     val tipStyle = TextStyle(fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.inverseOnSurface)

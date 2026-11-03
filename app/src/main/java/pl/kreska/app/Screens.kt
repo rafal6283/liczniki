@@ -662,7 +662,7 @@ fun TrackerReport(t: Tracker, days: List<LocalDate>, v: Long, onOpen: () -> Unit
                 listOf(BarExtra("EKG", dailyMinutes(a.ecg, st.days), ecgC), BarExtra("Rytm Snu", dailyMinutes(a.night, st.days), nightC, dashed = true))
             }
         }
-        BarChart(st.days, st.dailyMinutes, col, { Stats.minutesLabel(it) }, extras)
+        BarChart(st.days, st.dailyMinutes, col, extras) { Stats.minutesLabel(it) }
         if (extras.any { e -> e.values.any { it > 0f } }) {
             AfLegend(t.name, col, extras[0].values.any { it > 0f }, extras[1].values.any { it > 0f })
         }

@@ -205,11 +205,11 @@ fun AfTimeline(days: List<LocalDate>, kreska: List<Span>, ecg: List<Span>, night
     // szczegóły wybranego dnia
     val d = rows[sel.coerceIn(0, rows.size - 1)]
     val r = listOf(Span(Dates.startOf(d), Dates.startOf(d.plusDays(1))))
-    val items = buildList {
+    val items = buildList<AfItem> {
         kreska.filter { Spans.intersect(listOf(it), r).isNotEmpty() }.forEach { add(AfItem(0, it)) }
         ecg.filter { Spans.intersect(listOf(it), r).isNotEmpty() }.forEach { add(AfItem(1, it)) }
         night.filter { Spans.intersect(listOf(it), r).isNotEmpty() }.forEach { add(AfItem(2, it)) }
-    }.sortedBy { item.span.start }
+    }.sortedBy { it.span.start }
     Spacer(Modifier.height(10.dp))
     Text(Dates.longDay(d), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
     Column {
