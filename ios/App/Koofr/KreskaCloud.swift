@@ -220,6 +220,7 @@ enum ExchangeFiles {
 enum ExtStore {
     static let night = "nocny-licznik" // Rytm Snu (w bazie dawna nazwa, jak na Androidzie)
     static let ecg = "polar-ekg"
+    static let nightRhythm = "rytm-snu-rytm" // nieregularny rytm z opaski (osobny plik od Rytmu Snu 2.24)
 
     private static var ready = false
     private static func ensure() {
@@ -238,7 +239,8 @@ enum ExtStore {
               j["format"] as? String == "wymiana-zdarzen" else { throw KsError("To nie jest plik wymiany.") }
         var source = j["source"] as? String ?? ""
         if source == "rytm-snu" { source = night }
-        guard source == night || source == ecg else { return }
+        // od Rytmu Snu 2.24 nieregularny rytm z opaski jest w osobnym pliku „rytm-snu-rytm”
+        guard source == night || source == ecg || source == nightRhythm else { return }
         ensure()
         let db = SQL.shared
         db.run("DELETE FROM ext_windows WHERE source=?", [source])
@@ -284,8 +286,9 @@ enum ExtStore {
     /// Nieregularny rytm z opaski zapisany przez Rytm Snu (w nocy).
     static func nightAf() -> [Interval] {
         ensure()
-        return Spans.union(SQL.shared.query("SELECT start, end_ts FROM ext_events WHERE source=? AND type='af' AND end_ts IS NOT NULL",
-                                            [night]) { Interval(start: $0.i64(0), end: $0.i64(1)) })
+        // starsze wersje Rytmu Snu: w pliku nocy; nowsze: osobny plik „rytm-snu-rytm”
+        return Spans.union(SQL.shared.query("SELECT start, end_ts FROM ext_events WHERE source IN (?,?) AND type='af' AND end_ts IS NOT NULL",
+                                            [night, nightRhythm]) { Interval(start: $0.i64(0), end: $0.i64(1)) })
     }
 
     static func ecgWindows() -> [Interval] {

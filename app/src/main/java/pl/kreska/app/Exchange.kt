@@ -21,6 +21,8 @@ import java.time.LocalDate
 const val SRC_NIGHT = "nocny-licznik"
 const val SRC_NIGHT_NEW = "rytm-snu"
 const val SRC_ECG = "polar-ekg"
+/** Nieregularny rytm z opaski z Rytmu Snu — od wersji 2.24 osobny plik „rytm-snu-rytm”. */
+const val SRC_NIGHT_RHYTHM = "rytm-snu-rytm"
 
 data class ExtEvent(val type: String, val start: Long, val end: Long?, val confidence: Double?, val verified: Boolean?)
 
@@ -30,6 +32,7 @@ object Exchange {
     fun sourceLabel(s: String) = when (s) {
         SRC_NIGHT -> "Rytm Snu"
         SRC_ECG -> "Polar EKG"
+        SRC_NIGHT_RHYTHM -> "Rytm Snu (rytm z opaski)"
         else -> s
     }
 
@@ -43,7 +46,7 @@ object Exchange {
         if (j.optString("format") != "wymiana-zdarzen") throw IllegalArgumentException("To nie jest plik eksportu z Rytmu Snu ani Polar EKG")
         if (j.optInt("version") != 1) throw IllegalArgumentException("Nieobsługiwana wersja pliku – zaktualizuj Kreskę")
         val source = j.getString("source").let { if (it == SRC_NIGHT_NEW) SRC_NIGHT else it }
-        if (source != SRC_NIGHT && source != SRC_ECG) throw IllegalArgumentException("Nieznane źródło: $source")
+        if (source != SRC_NIGHT && source != SRC_ECG && source != SRC_NIGHT_RHYTHM) throw IllegalArgumentException("Nieznane źródło: $source")
 
         val ws = j.optJSONArray("windows")
         val windows = ArrayList<Span>()
@@ -74,9 +77,10 @@ object Exchange {
             ?: throw IllegalArgumentException("Nie udało się otworzyć pliku")
         val x = parse(text)
         Repo.replaceExternal(x)
-        val what = if (x.source == SRC_NIGHT) "nocy: ${x.windows.size}, FF: ${x.events.count { it.type == "fart" && it.verified != false }}"
+        val what = if (x.source == SRC_NIGHT_RHYTHM) "nocy z opaską: ${x.windows.size}"
+        else if (x.source == SRC_NIGHT) "nocy: ${x.windows.size}, FF: ${x.events.count { it.type == "fart" && it.verified != false }}"
         else "fragmentów zapisu: ${x.windows.size}, epizodów AF: ${x.events.size}"
-        val afNight = if (x.source == SRC_NIGHT) x.events.count { it.type == "af" } else 0
+        val afNight = if (x.source == SRC_NIGHT || x.source == SRC_NIGHT_RHYTHM) x.events.count { it.type == "af" } else 0
         "Zaimportowano z ${sourceLabel(x.source)} – $what" + if (afNight > 0) ", nieregularny rytm: $afNight" else ""
     } catch (e: IllegalArgumentException) {
         e.message ?: "Niepoprawny plik"

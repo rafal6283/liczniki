@@ -610,7 +610,7 @@ fun ImportedTag(text: String, modifier: Modifier = Modifier) {
 }
 
 fun importedFrom(source: String) = when (source) {
-    SRC_NIGHT, SRC_NIGHT_NEW -> "z Rytmu Snu"
+    SRC_NIGHT, SRC_NIGHT_NEW, SRC_NIGHT_RHYTHM -> "z Rytmu Snu"
     SRC_ECG -> "z Polar EKG"
     else -> "zaimportowane"
 }
