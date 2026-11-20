@@ -8,7 +8,7 @@ import java.io.File
 
 /**
  * Kontrakt wymiany (WYMIANA.md w repozytorium Rytmu Snu): każdy plik, który Kreska pobiera
- * (przedrostki z KreskaExchange.sources), musi się wczytać bez wyjątku. Przykłady `wymiana/*.json`
+ * (przedrostki z KreskaExchange.sources), musi się wczytać bez wyjątku. Przykłady z folderu `wymiana` (pliki .json)
  * pobiera CI z rafal6283/nocny-licznik do src/test/resources/wymiana.
  */
 class WymianaTest {
