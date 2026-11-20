@@ -7,3 +7,4 @@ local.properties
 captures/
 .kotlin/
 app/src/test/resources/wymiana/
+app/src/test/resources/koofr/
