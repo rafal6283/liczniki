@@ -44,7 +44,7 @@ class AnimSeries(private val from: List<Float>, private val to: List<Float>, val
         val p = ((t - delay) / (1f - 0.35f)).coerceIn(0f, 1f)
         val e = 1f - (1f - p) * (1f - p) * (1f - p) // ease-out cubic
         val a = from.getOrElse(i) { 0f }
-        return a + (to[i] - a) * e
+        return a + (to.getOrElse(i) { 0f } - a) * e
     }
 }
 
@@ -62,6 +62,9 @@ fun animatedSeries(values: List<Float>, durationMs: Int = 750): AnimSeries {
             t.animateTo(1f, tween(durationMs, easing = FastOutSlowInEasing))
         }
     }
+    // Zmiana okresu (7 → 30 dni → rok): w pierwszej klatce efekt jeszcze nie ruszył, a wykres rysuje już
+    // nową liczbę dni – stara seria jest krótsza i to[i] wychodziło poza zakres (aplikacja się zamykała).
+    if (to.size != values.size) return AnimSeries(List(values.size) { 0f }, values, 0f)
     return AnimSeries(from, to, t.value)
 }
 
