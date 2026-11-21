@@ -314,6 +314,12 @@ fun CounterDetail(
         }
 
         item {
+            StatSection("Kalendarz", "Każda kratka to dzień – im mocniejszy kolor, tym więcej.") {
+                CalendarGrid(dd, st.values, col, c.goal?.toFloat(), onDay)
+            }
+        }
+
+        item {
             StatSection("Serie", "Liczone z całej historii.") {
                 InfoLine("Obecna seria dni z wpisem", "${st.streakCurrent} d")
                 InfoLine("Najdłuższa seria", "${st.streakBest} d")
